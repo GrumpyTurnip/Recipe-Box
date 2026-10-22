@@ -2,15 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#4A6741">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Recipe Box">
 <title>Recipe Box</title>
 <style>
   :root{
@@ -35,7 +26,7 @@
     background-image: radial-gradient(circle at 1px 1px, rgba(46,33,21,0.06) 1px, transparent 0);
     background-size: 22px 22px;
   }
-  .app{max-width:1000px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(80px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));}
+  .app{max-width:1000px;margin:0 auto;padding:24px 20px 80px;}
 
   header.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
   .brand{display:flex;align-items:center;gap:12px;}
@@ -157,6 +148,18 @@
   .pantry-tag{margin-left:auto;font-size:10px;color:var(--ink-soft);font-family:var(--font-mono);flex-shrink:0;}
   .small-x{background:none;border:none;color:var(--brick);cursor:pointer;font-size:15px;padding:0 4px;}
 
+  .login-wrap{min-height:70vh;display:flex;align-items:center;justify-content:center;}
+  .login-card{background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:26px;max-width:380px;width:100%;}
+  .login-title{font-family:var(--font-serif);font-size:22px;margin:0 0 14px;}
+  .sync-chip{font-family:var(--font-mono);font-size:11px;padding:5px 10px;border-radius:14px;border:1.5px solid var(--line);background:var(--card);cursor:pointer;color:var(--ink-soft);}
+  .sync-chip.ok{border-color:var(--basil);color:var(--basil-dark);}
+  .sync-chip.err{border-color:var(--brick);color:var(--brick);}
+  .sync-chip.busy{border-style:dashed;}
+  pre.rules{background:#fff;border:1.5px solid var(--line);border-radius:5px;padding:10px;font-size:11px;overflow-x:auto;-webkit-user-select:all;user-select:all;margin:6px 0 12px;font-family:var(--font-mono);}
+  details.setup summary{cursor:pointer;font-weight:600;font-size:13px;margin-bottom:8px;}
+  details.setup ol{font-size:13px;line-height:1.55;padding-left:20px;margin:6px 0 10px;}
+  .notice{font-size:12px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin:8px 0;}
+  .notice.err{border-color:var(--brick);color:var(--brick);}
   .banner{background:#f7dbd7;border:1px solid var(--brick);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;}
   footer.tip{text-align:center;font-size:11px;color:var(--ink-soft);margin-top:40px;}
 </style>
@@ -169,7 +172,7 @@
 <script>
 window.addEventListener('error', function(e){
   var root = document.getElementById('root');
-  if(!root || root.getAttribute('data-showing-error')) return;
+  if(!root || root.getAttribute('data-showing-error') || root.getAttribute('data-ready')) return;
   root.setAttribute('data-showing-error', '1');
   var msg = (e && e.message) ? e.message : 'Unknown error';
   var detail = (e && e.filename) ? (msg + '\n(' + e.filename + ':' + e.lineno + ':' + e.colno + ')') : msg;
@@ -179,7 +182,7 @@ window.addEventListener('error', function(e){
 });
 window.addEventListener('unhandledrejection', function(e){
   var root = document.getElementById('root');
-  if(!root || root.getAttribute('data-showing-error')) return;
+  if(!root || root.getAttribute('data-showing-error') || root.getAttribute('data-ready')) return;
   root.setAttribute('data-showing-error', '1');
   var reason = e && e.reason;
   var msg = (reason && reason.message) ? reason.message : String(reason);
@@ -209,7 +212,9 @@ var state = {
   pantry: PANTRY_STAPLES.map(function(name){ return {id:uid(), name:name}; }),
   shopping: [],
   settings: { units: "metric", layout: "detailed", showQuantities: false, detailLevel: "detailed",
-    apiConfig: { enabled: false, provider: "anthropic", apiKey: "", model: "" } }
+    apiConfig: { enabled: false, provider: "anthropic", apiKey: "", model: "" },
+    firebaseConfig: null },
+  syncMeta: { uid: null, hashes: {}, deleted: {}, metaHash: null, metaUpdatedAt: 0, metaSynced: false }
 };
 
 var ui = {
@@ -227,6 +232,7 @@ var ui = {
   confirmDeleteId: null,
   editingRecipeId: null,
   apiDraft: null,
+  syncDraft: null,
   draft: freshDraft()
 };
 
@@ -621,6 +627,7 @@ function loadState(){
   if(hasCloudStorage()){
     loader = window.storage.get('app-state', false).then(function(res){
       if(res && res.value) state = JSON.parse(res.value);
+      normalizeState();
     }).catch(function(){ /* no saved state yet, or storage unavailable */ });
   } else {
     loader = Promise.resolve().then(function(){
@@ -628,16 +635,20 @@ function loadState(){
         var raw = localStorage.getItem('recipe-box-state');
         if(raw) state = JSON.parse(raw);
       }catch(e){ /* localStorage unavailable, start fresh */ }
+      normalizeState();
     });
   }
   return Promise.race([loader, timeout(4000)]).then(function(){
+    normalizeState();
     ui.loaded = true;
     render();
+    initSync();
   }).catch(function(err){
     showFatalError(err);
   });
 }
-function saveState(){
+/* skipSync: true when the change came from the cloud itself (or is bookkeeping), so it isn't pushed straight back */
+function saveState(skipSync){
   if(hasCloudStorage()){
     Promise.race([
       window.storage.set('app-state', JSON.stringify(state), false).then(function(r){ return !!r; }),
@@ -655,6 +666,501 @@ function saveState(){
     }
     render();
   }
+  if(skipSync !== true) scheduleSyncPush();
+}
+
+/* ---------- Firebase sync (Cloud Firestore + email/password sign-in) ---------- */
+var FIREBASE_VERSION = "10.14.1";
+/* Web config for the Recipe Box Firebase project. This is identifying info, not a secret:
+   access is protected by sign-in plus the Firestore security rules, not by hiding these values. */
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCqYl0Tqx4dFInAs6jjaR2LJEmWXM3P-3M",
+  authDomain: "recipe-box-ca280.firebaseapp.com",
+  projectId: "recipe-box-ca280",
+  storageBucket: "recipe-box-ca280.firebasestorage.app",
+  messagingSenderId: "69762239651",
+  appId: "1:69762239651:web:a9f39cf889e518b45ac316"
+};
+var FIRESTORE_RULES = [
+  "rules_version = '2';",
+  "service cloud.firestore {",
+  "  match /databases/{database}/documents {",
+  "    match /users/{userId}/{document=**} {",
+  "      allow read, write: if request.auth != null && request.auth.uid == userId;",
+  "    }",
+  "  }",
+  "}"
+].join("\n");
+
+var sync = {
+  status: "off",   /* off | loading | signedout | syncing | synced | error */
+  error: "", user: null, lastSync: 0, trimmed: false,
+  db: null, auth: null, unsubs: [],
+  gotRecipes: false, gotMeta: false, ready: false,
+  pushing: false, pushAgain: false, timer: null
+};
+
+function freshSyncMeta(){
+  return { uid: null, hashes: {}, deleted: {}, metaHash: null, metaUpdatedAt: 0, metaSynced: false };
+}
+
+/* makes sure older saved data (from before sync existed) has every field the app now expects */
+function normalizeState(){
+  if(!state || typeof state !== 'object') state = {};
+  if(!Array.isArray(state.recipes)) state.recipes = [];
+  if(!Array.isArray(state.pantry)) state.pantry = [];
+  if(!Array.isArray(state.shopping)) state.shopping = [];
+  if(!state.settings || typeof state.settings !== 'object') state.settings = {};
+  var defaults = { units: "metric", layout: "detailed", showQuantities: false, detailLevel: "detailed" };
+  Object.keys(defaults).forEach(function(k){ if(state.settings[k] === undefined) state.settings[k] = defaults[k]; });
+  if(!state.settings.apiConfig) state.settings.apiConfig = { enabled: false, provider: "anthropic", apiKey: "", model: "" };
+  if(state.settings.firebaseConfig === undefined) state.settings.firebaseConfig = null;
+  var m = state.syncMeta;
+  if(!m || typeof m !== 'object'){ state.syncMeta = freshSyncMeta(); m = state.syncMeta; }
+  if(!m.hashes) m.hashes = {};
+  if(!m.deleted) m.deleted = {};
+  if(m.metaHash === undefined) m.metaHash = null;
+  if(!m.metaUpdatedAt) m.metaUpdatedAt = 0;
+  if(m.uid === undefined) m.uid = null;
+  m.metaSynced = !!m.metaSynced;
+}
+
+function syncConfig(){ return FIREBASE_CONFIG; }
+function syncIsActive(){ return !!(sync.user && sync.db); }
+
+function hashString(str){
+  var h = 5381;
+  for(var i = 0; i < str.length; i++){ h = (((h << 5) + h) ^ str.charCodeAt(i)) | 0; }
+  return str.length + ":" + (h >>> 0).toString(36);
+}
+function recipeHash(r){
+  var c = {};
+  Object.keys(r).forEach(function(k){ if(k !== 'updatedAt') c[k] = r[k]; });
+  return hashString(JSON.stringify(c));
+}
+function syncableSettings(){
+  var s = {};
+  Object.keys(state.settings).forEach(function(k){
+    if(k !== 'apiConfig' && k !== 'firebaseConfig') s[k] = state.settings[k];
+  });
+  return s;
+}
+function metaPayload(){ return { pantry: state.pantry, shopping: state.shopping, settings: syncableSettings() }; }
+function currentMetaHash(){ return hashString(JSON.stringify(metaPayload())); }
+
+function indexOfRecipe(id){
+  for(var i = 0; i < state.recipes.length; i++){ if(state.recipes[i].id === id) return i; }
+  return -1;
+}
+
+function friendlySyncError(err){
+  var code = err && err.code ? String(err.code) : "";
+  var map = {
+    "auth/invalid-credential": "Wrong email or password.",
+    "auth/wrong-password": "Wrong email or password.",
+    "auth/user-not-found": "No account with that email yet — use “Create account”.",
+    "auth/email-already-in-use": "An account with that email already exists — use “Sign in”.",
+    "auth/weak-password": "Password needs at least 6 characters.",
+    "auth/invalid-email": "That doesn’t look like a valid email address.",
+    "auth/operation-not-allowed": "Email/password sign-in isn’t switched on in your Firebase project (Authentication → Sign-in method).",
+    "auth/network-request-failed": "Couldn’t reach Firebase — check your connection.",
+    "auth/too-many-requests": "Too many attempts — wait a few minutes and try again.",
+    "auth/invalid-api-key": "That API key isn’t valid for a Firebase project. Re-copy the config from Project settings.",
+    "auth/api-key-not-valid": "That API key isn’t valid for a Firebase project. Re-copy the config from Project settings.",
+    "permission-denied": "Firebase refused access — check the security rules were published (see the setup steps).",
+    "unavailable": "Couldn’t reach Firebase right now — it will retry when you’re back online."
+  };
+  if(map[code]) return map[code];
+  return (err && err.message) ? err.message : "Something went wrong with sync.";
+}
+
+var firebaseSdkPromise = null;
+function loadFirebaseSdk(){
+  if(window.firebase && window.firebase.auth && window.firebase.firestore) return Promise.resolve();
+  if(firebaseSdkPromise) return firebaseSdkPromise;
+  var base = "https://www.gstatic.com/firebasejs/" + FIREBASE_VERSION + "/";
+  function load(file){
+    return new Promise(function(resolve, reject){
+      var s = document.createElement('script');
+      s.src = base + file;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ reject(new Error("Couldn’t load Firebase from Google’s servers. You may be offline, or this page is running somewhere that only allows approved sites (like Claude’s preview).")); };
+      document.head.appendChild(s);
+    });
+  }
+  firebaseSdkPromise = load("firebase-app-compat.js").then(function(){
+    return Promise.all([load("firebase-auth-compat.js"), load("firebase-firestore-compat.js")]);
+  }).catch(function(e){ firebaseSdkPromise = null; throw e; });
+  return firebaseSdkPromise;
+}
+
+function deleteAllFirebaseApps(){
+  if(!(window.firebase && window.firebase.apps)) return Promise.resolve();
+  return Promise.all(Array.prototype.slice.call(window.firebase.apps).map(function(a){ return a.delete(); }));
+}
+
+function setSyncError(err){
+  sync.status = "error";
+  sync.error = friendlySyncError(err);
+  render();
+}
+
+function stopSyncListeners(){
+  sync.unsubs.forEach(function(fn){ try{ fn(); }catch(e){} });
+  sync.unsubs = [];
+  sync.gotRecipes = false; sync.gotMeta = false; sync.ready = false;
+  clearTimeout(sync.timer);
+}
+
+function initSync(){
+  var cfg = syncConfig();
+  stopSyncListeners();
+  sync.user = null; sync.auth = null; sync.db = null;
+  if(!cfg){ sync.status = "off"; render(); return Promise.resolve(); }
+  sync.status = "loading"; sync.error = "";
+  render();
+  return Promise.race([
+    loadFirebaseSdk(),
+    timeout(15000).then(function(){ throw new Error("Firebase is taking too long to load. Check your connection and try again."); })
+  ]).then(function(){
+    return deleteAllFirebaseApps();
+  }).then(function(){
+    window.firebase.initializeApp(cfg);
+    sync.auth = window.firebase.auth();
+    sync.db = window.firebase.firestore();
+    sync.auth.onAuthStateChanged(function(user){
+      stopSyncListeners();
+      sync.user = user || null;
+      if(user){
+        if(state.syncMeta.uid !== user.uid){
+          if(state.syncMeta.uid){
+            /* a different account is signing in on this device: don't mix the previous account's data in */
+            var keepApi = state.settings.apiConfig;
+            state.recipes = []; state.shopping = [];
+            state.pantry = PANTRY_STAPLES.map(function(name){ return { id: uid(), name: name }; });
+            state.settings = { units: "metric", layout: "detailed", showQuantities: false, detailLevel: "detailed", apiConfig: keepApi, firebaseConfig: null };
+          }
+          /* first ever sign-in keeps whatever is already on this device and uploads it */
+          state.syncMeta = freshSyncMeta();
+          state.syncMeta.uid = user.uid;
+          saveState(true);
+        }
+        sync.status = "syncing";
+        startSyncListeners();
+      } else {
+        sync.status = "signedout";
+        ui.showAdd = false; ui.openRecipeId = null; ui.tab = "recipes"; ui.editingRecipeId = null;
+      }
+      render();
+    }, setSyncError);
+  }).catch(setSyncError);
+}
+
+function userRef(){ return sync.db.collection('users').doc(sync.user.uid); }
+function recipesRef(){ return userRef().collection('recipes'); }
+function metaRef(){ return userRef().collection('meta').doc('state'); }
+
+function startSyncListeners(){
+  sync.unsubs.push(recipesRef().onSnapshot({ includeMetadataChanges: true }, function(snap){
+    try{ applyRemoteRecipes(snap); }catch(e){ setSyncError(e); return; }
+    if(!snap.metadata.fromCache) sync.gotRecipes = true;
+    maybeSyncReady();
+  }, setSyncError));
+  sync.unsubs.push(metaRef().onSnapshot({ includeMetadataChanges: true }, function(doc){
+    if(doc.metadata.hasPendingWrites) return;
+    var changed = false;
+    var unknownYet = doc.metadata.fromCache && !doc.exists;
+    if(!unknownYet){
+      try{ changed = applyRemoteMeta(doc); }catch(e){ setSyncError(e); return; }
+      sync.gotMeta = true;
+    }
+    if(changed) saveState(true);
+    maybeSyncReady();
+  }, setSyncError));
+}
+
+/* push only starts once we've seen what's already in the cloud, so a fresh device can never overwrite newer cloud data */
+function maybeSyncReady(){
+  if(sync.ready || !sync.gotRecipes || !sync.gotMeta) return;
+  sync.ready = true;
+  pushChanges();
+}
+
+function applyRemoteRecipes(snap){
+  var meta = state.syncMeta, changed = false, needsPush = false;
+  snap.docChanges().forEach(function(change){
+    if(change.type === 'removed') return;
+    if(change.doc.metadata && change.doc.metadata.hasPendingWrites) return;
+    var id = change.doc.id;
+    var data = change.doc.data() || {};
+    var idx = indexOfRecipe(id);
+    var local = idx > -1 ? state.recipes[idx] : null;
+    var remoteTs = data.updatedAt || 0;
+    var localDirty = !!local && meta.hashes[id] !== recipeHash(local);
+
+    if(data.deleted){
+      if(!local){ meta.deleted[id] = Math.max(meta.deleted[id] || 0, remoteTs); return; }
+      if(localDirty || (local.updatedAt || 0) > remoteTs){
+        /* edited here after it was deleted elsewhere: keep it and push it back up */
+        delete meta.hashes[id]; needsPush = true; return;
+      }
+      state.recipes.splice(idx, 1);
+      delete meta.hashes[id];
+      meta.deleted[id] = remoteTs;
+      if(ui.openRecipeId === id) ui.openRecipeId = null;
+      changed = true;
+      return;
+    }
+
+    if(localDirty){ needsPush = true; return; }                       /* unsent local edits win */
+    if(local && (local.updatedAt || 0) >= remoteTs) return;            /* already have this version */
+    if(!local && (meta.deleted[id] || 0) >= remoteTs) return;          /* deleted here more recently */
+    var rec = data;
+    delete rec.deleted;
+    rec.id = id;
+    if(local) state.recipes[idx] = rec; else state.recipes.push(rec);
+    meta.hashes[id] = recipeHash(rec);
+    delete meta.deleted[id];
+    changed = true;
+  });
+  if(changed){
+    state.recipes.sort(function(a, b){ return (b.createdAt || 0) - (a.createdAt || 0); });
+    saveState(true);
+  }
+  if(needsPush) scheduleSyncPush();
+}
+
+/* returns true if local data changed */
+function applyRemoteMeta(doc){
+  var meta = state.syncMeta;
+  if(!doc.exists){ meta.metaSynced = true; return false; }
+  var data = doc.data() || {};
+  var remoteTs = data.updatedAt || 0;
+
+  if(!meta.metaSynced){
+    /* first time this device meets the cloud copy: merge, don't overwrite */
+    var names = {};
+    state.pantry.forEach(function(p){ names[String(p.name).toLowerCase()] = true; });
+    (data.pantry || []).forEach(function(p){
+      var key = String(p.name).toLowerCase();
+      if(!names[key]){ state.pantry.push(p); names[key] = true; }
+    });
+    var ids = {};
+    state.shopping.forEach(function(s){ ids[s.id] = true; });
+    (data.shopping || []).forEach(function(s){ if(!ids[s.id]){ state.shopping.push(s); ids[s.id] = true; } });
+    Object.keys(data.settings || {}).forEach(function(k){
+      if(k !== 'apiConfig' && k !== 'firebaseConfig') state.settings[k] = data.settings[k];
+    });
+    meta.metaSynced = true;
+    meta.metaHash = null;               /* forces the merged result to be pushed */
+    return true;
+  }
+
+  if(meta.metaHash !== currentMetaHash()) return false;   /* unsent local changes win */
+  if(remoteTs <= (meta.metaUpdatedAt || 0)) return false; /* nothing newer */
+  state.pantry = data.pantry || [];
+  state.shopping = data.shopping || [];
+  Object.keys(data.settings || {}).forEach(function(k){
+    if(k !== 'apiConfig' && k !== 'firebaseConfig') state.settings[k] = data.settings[k];
+  });
+  meta.metaUpdatedAt = remoteTs;
+  meta.metaHash = currentMetaHash();
+  return true;
+}
+
+function scheduleSyncPush(){
+  if(!syncIsActive() || !sync.ready) return;
+  clearTimeout(sync.timer);
+  sync.timer = setTimeout(pushChanges, 1200);
+}
+
+/* Firestore documents max out at 1 MiB, so trim the oldest "my make" photos if a recipe is too big to sync whole */
+function recipeToRemote(r){
+  var copy = JSON.parse(JSON.stringify(r));
+  copy.deleted = false;
+  var LIMIT = 900000;
+  while(JSON.stringify(copy).length > LIMIT && copy.makePhotos && copy.makePhotos.length){
+    copy.makePhotos.shift(); sync.trimmed = true;
+  }
+  if(JSON.stringify(copy).length > LIMIT && copy.cover && String(copy.cover).indexOf('data:') === 0){
+    copy.cover = null; sync.trimmed = true;
+  }
+  return copy;
+}
+
+function pushChanges(){
+  if(!syncIsActive() || !sync.ready) return Promise.resolve();
+  if(sync.pushing){ sync.pushAgain = true; return Promise.resolve(); }
+  sync.pushing = true;
+  var meta = state.syncMeta;
+  var now = Date.now();
+  var ops = [];
+  var currentIds = {};
+
+  state.recipes.forEach(function(r){
+    currentIds[r.id] = true;
+    var h = recipeHash(r);
+    if(meta.hashes[r.id] !== h){
+      r.updatedAt = now;
+      ops.push({ ref: recipesRef().doc(r.id), data: recipeToRemote(r),
+        after: function(){ meta.hashes[r.id] = h; delete meta.deleted[r.id]; } });
+    }
+  });
+  Object.keys(meta.hashes).forEach(function(id){
+    if(!currentIds[id]){
+      ops.push({ ref: recipesRef().doc(id), data: { deleted: true, updatedAt: now },
+        after: function(){ delete meta.hashes[id]; meta.deleted[id] = now; } });
+    }
+  });
+  var mh = currentMetaHash();
+  if(meta.metaHash !== mh){
+    var payload = metaPayload();
+    payload.updatedAt = now;
+    ops.push({ ref: metaRef(), data: JSON.parse(JSON.stringify(payload)),
+      after: function(){ meta.metaHash = mh; meta.metaUpdatedAt = now; } });
+  }
+
+  if(!ops.length){
+    sync.pushing = false;
+    if(sync.status !== "synced"){ sync.status = "synced"; sync.error = ""; sync.lastSync = Date.now(); render(); }
+    return Promise.resolve();
+  }
+
+  sync.status = "syncing";
+  render();
+  var chain = Promise.resolve();
+  for(var i = 0; i < ops.length; i += 400){
+    (function(chunk){
+      chain = chain.then(function(){
+        var batch = sync.db.batch();
+        chunk.forEach(function(op){ batch.set(op.ref, op.data); });
+        return batch.commit().then(function(){ chunk.forEach(function(op){ op.after(); }); });
+      });
+    })(ops.slice(i, i + 400));
+  }
+  return chain.then(function(){
+    sync.status = "synced"; sync.error = ""; sync.lastSync = Date.now();
+  }).catch(function(err){
+    sync.status = "error"; sync.error = friendlySyncError(err);
+  }).then(function(){
+    sync.pushing = false;
+    saveState(true);
+    if(sync.pushAgain){ sync.pushAgain = false; scheduleSyncPush(); }
+  });
+}
+
+function syncChipHtml(){
+  if(!sync.user) return '';
+  var labels = {
+    loading: ['Connecting…', 'busy'], signedout: ['Sync: sign in', ''], syncing: ['Syncing…', 'busy'],
+    synced: ['Synced', 'ok'], error: ['Sync problem', 'err'], off: ['', '']
+  };
+  var l = labels[sync.status] || ['', ''];
+  return '<button class="sync-chip ' + l[1] + '" id="sync-chip-btn" title="Open sync settings">' + l[0] + '</button>';
+}
+
+function ensureSyncDraft(){
+  if(!ui.syncDraft) ui.syncDraft = { email: "", password: "", error: "", info: "", busy: false };
+  return ui.syncDraft;
+}
+
+/* everything the person sees until they are signed in */
+function renderLoginScreen(){
+  var sd = ensureSyncDraft();
+  var html = '<div class="login-wrap"><div class="login-card">';
+  html += '<div class="brand" style="margin-bottom:18px;"><div class="mark">RB</div><div><h1>Recipe Box</h1><p>your recipes, your way</p></div></div>';
+  html += '<h3 class="login-title">Sign in to sync across devices</h3>';
+  if(sync.status === "loading" || sync.status === "off"){
+    html += '<div class="status-line"><span class="spinner"></span> Checking sign-in…</div>';
+  } else if(sync.auth){
+    html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">Your recipes, pantry and shopping list follow you to every device you sign in on.</p>';
+    html += '<div class="field-group"><label class="field">Email</label><input type="text" id="sync-email" autocomplete="email" autocapitalize="off" value="' + esc(sd.email) + '"></div>';
+    html += '<div class="field-group"><label class="field">Password</label><input type="password" id="sync-password" autocomplete="current-password" value="' + esc(sd.password) + '"></div>';
+    if(sd.error) html += '<p class="error-line">' + esc(sd.error) + '</p>';
+    if(sd.info) html += '<p style="font-size:12px;color:var(--basil-dark);">' + esc(sd.info) + '</p>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+    html += '<button class="btn btn-primary" id="sync-signin-btn" ' + (sd.busy ? 'disabled' : '') + '>Sign in</button>';
+    html += '<button class="btn btn-accent" id="sync-create-btn" ' + (sd.busy ? 'disabled' : '') + '>Create account</button>';
+    html += '</div>';
+    html += '<p style="margin:12px 0 0;"><button class="back-link" id="sync-reset-btn" style="margin:0;" ' + (sd.busy ? 'disabled' : '') + '>Forgot password?</button></p>';
+  } else {
+    html += '<div class="notice err">' + esc(sync.error || 'Couldn’t connect.') + '</div>';
+    html += '<p style="font-size:12px;color:var(--ink-soft);">Recipe Box needs a connection, and needs to be opened from its web address rather than as a downloaded file.</p>';
+    html += '<button class="btn btn-primary" id="sync-retry-btn">Try again</button>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+/* Settings card shown once signed in */
+function renderSyncSettingsBlock(){
+  var html = '<div class="card-block"><h4>Account &amp; sync</h4>';
+  var when = sync.lastSync ? new Date(sync.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  html += '<p style="font-size:13px;margin-top:-4px;">Signed in as <strong>' + esc((sync.user && sync.user.email) || 'your account') + '</strong>. Your recipes, photos, pantry, shopping list and display settings sync live across every device you sign in on. Your AI API key is never synced.</p>';
+  if(sync.status === "syncing") html += '<div class="status-line"><span class="spinner"></span> Syncing…</div>';
+  else if(sync.status === "synced") html += '<p style="font-size:12px;color:var(--basil-dark);margin:4px 0;">Up to date' + (when ? ' · last synced ' + esc(when) : '') + '</p>';
+  if(sync.status === "error") html += '<div class="notice err">' + esc(sync.error) + '</div>';
+  if(sync.trimmed) html += '<div class="notice">Some very large photos were too big to sync whole, so older “my make” photos on those recipes stay on this device only.</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">';
+  html += '<button class="btn btn-primary btn-sm" id="sync-now-btn">Sync now</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="sync-signout-btn">Sign out</button>';
+  html += '</div>';
+  html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:10px;">Sync isn’t a backup — keep downloading one now and then. Signing in to a different account on this device clears this device’s copy first, so accounts never mix.</p>';
+  html += '<details class="setup" style="margin-top:12px;"><summary>One-time Firebase setup notes</summary>';
+  html += '<ol><li>Authentication → Sign-in method: <strong>Email/Password</strong> switched on.</li>';
+  html += '<li>Firestore Database created (the Storage tab isn’t used).</li>';
+  html += '<li>Firestore → Rules → publish exactly this:</li></ol>';
+  html += '<pre class="rules">' + esc(FIRESTORE_RULES) + '</pre></details>';
+  html += '</div>';
+  return html;
+}
+
+function attachSyncHandlers(){
+  var sd = ensureSyncDraft();
+  var emailEl = document.getElementById('sync-email');
+  var passEl = document.getElementById('sync-password');
+  if(emailEl) emailEl.oninput = function(){ sd.email = emailEl.value; };
+  if(passEl){
+    passEl.oninput = function(){ sd.password = passEl.value; };
+    passEl.onkeydown = function(e){ if(e.key === 'Enter') runAuth('signin'); };
+  }
+
+  function runAuth(kind){
+    if(emailEl) sd.email = emailEl.value.trim();
+    if(passEl) sd.password = passEl.value;
+    if(!sd.email || !sd.password){ sd.error = "Enter your email and password."; sd.info = ""; render(); return; }
+    if(!sync.auth){ sd.error = "Not connected yet — try again in a moment."; render(); return; }
+    sd.busy = true; sd.error = ""; sd.info = "";
+    render();
+    var p = (kind === 'create')
+      ? sync.auth.createUserWithEmailAndPassword(sd.email, sd.password)
+      : sync.auth.signInWithEmailAndPassword(sd.email, sd.password);
+    p.then(function(){ sd.password = ""; }).catch(function(err){ sd.error = friendlySyncError(err); }).then(function(){
+      sd.busy = false; render();
+    });
+  }
+  var signInBtn = document.getElementById('sync-signin-btn');
+  if(signInBtn) signInBtn.onclick = function(){ runAuth('signin'); };
+  var createBtn = document.getElementById('sync-create-btn');
+  if(createBtn) createBtn.onclick = function(){ runAuth('create'); };
+  var resetBtn = document.getElementById('sync-reset-btn');
+  if(resetBtn) resetBtn.onclick = function(){
+    if(emailEl) sd.email = emailEl.value.trim();
+    if(!sd.email){ sd.error = "Enter your email first, then press Forgot password."; sd.info = ""; render(); return; }
+    sd.busy = true; sd.error = ""; sd.info = ""; render();
+    sync.auth.sendPasswordResetEmail(sd.email).then(function(){
+      sd.info = "Password reset email sent — check your inbox (and spam).";
+    }).catch(function(err){ sd.error = friendlySyncError(err); }).then(function(){ sd.busy = false; render(); });
+  };
+
+  var nowBtn = document.getElementById('sync-now-btn');
+  if(nowBtn) nowBtn.onclick = function(){ pushChanges(); };
+  var retryBtn = document.getElementById('sync-retry-btn');
+  if(retryBtn) retryBtn.onclick = function(){ initSync(); };
+  ['sync-signout-btn', 'header-signout-btn'].forEach(function(id){
+    var b = document.getElementById(id);
+    if(b) b.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
+  });
 }
 
 /* ---------- focus-preserving re-render ---------- */
@@ -683,6 +1189,7 @@ function render(){
       root.innerHTML = renderApp();
       attachHandlers();
     });
+    if(ui.loaded) root.setAttribute('data-ready', '1');
   }catch(err){
     showFatalError(err);
   }
@@ -703,11 +1210,17 @@ function renderApp(){
   if(!ui.loaded){
     return '<div style="padding:40px;font-family:monospace;">Opening the recipe box...</div>';
   }
+  /* nothing but the sign-in screen until someone is signed in */
+  if(!sync.user){
+    return renderLoginScreen();
+  }
   var html = '';
   html += '<header class="top">';
   html += '<div class="brand"><div class="mark">RB</div><div><h1>Recipe Box</h1><p>your recipes, your way</p></div></div>';
   html += '<div class="top-actions">';
+  html += syncChipHtml();
   html += '<button class="btn btn-ghost btn-sm" id="export-btn">Download my book</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="header-signout-btn">Sign out</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Import backup<input type="file" accept=".json" id="import-input" style="display:none;"></label>';
   html += '</div></header>';
 
@@ -907,6 +1420,7 @@ function renderSettings(){
   html += '</div></div>';
   html += '<p style="font-size:12px;color:var(--ink-soft);">You can override any of these per-recipe from the recipe page. Quick summaries are generated the first time you switch a recipe to quick view, then remembered.</p></div>';
 
+  html += renderSyncSettingsBlock();
   html += renderApiSettingsBlock();
 
   html += '<div class="card-block"><h4>Your data</h4><p style="font-size:13px;">Everything is stored in your browser. Download a backup regularly so nothing gets lost.</p>';
@@ -1067,12 +1581,17 @@ function syncDraftFromDom(){
 
 /* ---------- event wiring ---------- */
 function attachHandlers(){
+  if(ui.loaded && !sync.user){ attachSyncHandlers(); return; }
   var exportBtn = document.getElementById('export-btn');
   if(exportBtn) exportBtn.onclick = exportBackup;
   var settingsExportBtn = document.getElementById('settings-export-btn');
   if(settingsExportBtn) settingsExportBtn.onclick = exportBackup;
   var importInput = document.getElementById('import-input');
   if(importInput) importInput.onchange = importBackup;
+  var headerOut = document.getElementById('header-signout-btn');
+  if(headerOut) headerOut.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
+  var syncChipBtn = document.getElementById('sync-chip-btn');
+  if(syncChipBtn) syncChipBtn.onclick = function(){ ui.tab = "settings"; ui.openRecipeId = null; render(); };
 
   var tabBtns = document.querySelectorAll('.tab-btn');
   tabBtns.forEach(function(btn){
@@ -1303,6 +1822,8 @@ function attachSettingsHandlers(){
     state.settings.apiConfig = { enabled: false, provider: "anthropic", apiKey: "", model: "" };
     saveState();
   };
+
+  attachSyncHandlers();
 }
 
 function attachModalHandlers(){
@@ -1648,8 +2169,15 @@ function downloadJson(obj, filename){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+/* backups never include API keys, Firebase config, or per-device sync bookkeeping */
+function exportableState(){
+  var copy = JSON.parse(JSON.stringify(state));
+  delete copy.syncMeta;
+  if(copy.settings){ delete copy.settings.apiConfig; delete copy.settings.firebaseConfig; }
+  return copy;
+}
 function exportBackup(){
-  downloadJson(state, "recipe-box-backup-" + new Date().toISOString().slice(0,10) + ".json");
+  downloadJson(exportableState(), "recipe-box-backup-" + new Date().toISOString().slice(0,10) + ".json");
 }
 function exportSingleRecipe(r){
   var shareable = {
@@ -1701,10 +2229,23 @@ function importBackup(e){
     try{
       var imported = JSON.parse(ev.target.result);
       if(imported && Array.isArray(imported.recipes)){
-        state.recipes = (imported.recipes || []).concat(state.recipes);
+        var haveRecipe = {};
+        state.recipes.forEach(function(r){ haveRecipe[r.id] = true; });
+        var incoming = (imported.recipes || []).filter(function(r){
+          if(!r.id) r.id = uid();
+          return !haveRecipe[r.id];
+        });
+        state.recipes = incoming.concat(state.recipes);
         if(state.pantry.length === 0) state.pantry = imported.pantry || [];
-        state.shopping = state.shopping.concat(imported.shopping || []);
-        state.settings = imported.settings || state.settings;
+        var haveShop = {};
+        state.shopping.forEach(function(s){ haveShop[s.id] = true; });
+        state.shopping = state.shopping.concat((imported.shopping || []).filter(function(s){ return !haveShop[s.id]; }));
+        if(imported.settings){
+          state.settings = Object.assign({}, imported.settings, {
+            apiConfig: state.settings.apiConfig,
+            firebaseConfig: state.settings.firebaseConfig
+          });
+        }
         ui.apiDraft = null;
         saveState();
         alert("Backup imported \u2014 recipes merged into your collection.");
@@ -1737,13 +2278,6 @@ function importBackup(e){
 loadState();
 setTimeout(function(){ if(!ui.loaded){ ui.loaded = true; render(); } }, 6000);
 })();
-</script>
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js').catch(function(){});
-  });
-}
 </script>
 </body>
 </html>
