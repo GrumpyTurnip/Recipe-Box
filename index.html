@@ -2,6 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EDE4D3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Recipe Box">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
 <title>Recipe Box</title>
 <style>
   :root{
@@ -26,7 +34,13 @@
     background-image: radial-gradient(circle at 1px 1px, rgba(46,33,21,0.06) 1px, transparent 0);
     background-size: 22px 22px;
   }
-  .app{max-width:1000px;margin:0 auto;padding:24px 20px 80px;}
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--paper);}
+  body{min-height:100vh;min-height:100dvh;overflow-x:hidden;-webkit-tap-highlight-color:transparent;}
+  .app{max-width:1000px;margin:0 auto;padding:24px 20px 80px;
+    padding-top:max(24px,env(safe-area-inset-top));
+    padding-right:max(20px,env(safe-area-inset-right));
+    padding-bottom:calc(80px + env(safe-area-inset-bottom));
+    padding-left:max(20px,env(safe-area-inset-left));}
 
   header.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
   .brand{display:flex;align-items:center;gap:12px;}
@@ -63,7 +77,7 @@
   .btn-sm{padding:6px 10px;font-size:12px;}
   .btn:disabled{opacity:.5;cursor:not-allowed;}
 
-  input[type=text],input[type=number],input[type=url],input[type=password],textarea,select{
+  input[type=text],input[type=email],input[type=number],input[type=url],input[type=password],textarea,select{
     font-family:var(--font-sans);font-size:13px;padding:8px 10px;
     border:1.5px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);width:100%;
   }
@@ -162,6 +176,38 @@
   .notice.err{border-color:var(--brick);color:var(--brick);}
   .banner{background:#f7dbd7;border:1px solid var(--brick);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;}
   footer.tip{text-align:center;font-size:11px;color:var(--ink-soft);margin-top:40px;}
+
+  .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
+  .login-wrap{padding:16px 0;}
+  textarea.paste-box{min-height:200px;line-height:1.45;}
+
+  /* phones and the iPhone home-screen web app */
+  @media(max-width:600px){
+    .app{padding-top:max(14px,env(safe-area-inset-top));padding-right:max(14px,env(safe-area-inset-right));padding-left:max(14px,env(safe-area-inset-left));padding-bottom:calc(60px + env(safe-area-inset-bottom));}
+    /* 16px stops iOS zooming in when a field is tapped */
+    input[type=text],input[type=email],input[type=number],input[type=url],input[type=password],textarea,select{font-size:16px;padding:10px 11px;}
+    .btn{padding:11px 14px;min-height:42px;justify-content:center;}
+    .btn-sm{padding:9px 12px;min-height:38px;}
+    .chip{padding:8px 12px;font-size:12px;}
+    header.top{align-items:flex-start;}
+    .top-actions{width:100%;}
+    .top-actions .btn{flex:1 1 auto;}
+    nav.tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-left:-2px;}
+    nav.tabs::-webkit-scrollbar{display:none;}
+    nav.tabs button{padding:10px 12px;white-space:nowrap;flex-shrink:0;}
+    .toolbar input[type=text]{max-width:none;width:100%;}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
+    .rcard .cover{height:100px;}
+    .detail-header{flex-direction:column;}
+    .detail-cover{width:100%;height:200px;}
+    .detail-info{min-width:0;}
+    .detail-info h2{font-size:25px;}
+    .overlay{padding:0;align-items:stretch;}
+    .modal{border-radius:0;min-height:100%;max-width:none;padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
+    .add-mode-tabs{flex-wrap:wrap;}
+    .add-mode-tabs button{flex:1 1 auto;}
+    .login-card{padding:20px;}
+  }
 </style>
 </head>
 <body>
@@ -239,6 +285,7 @@ var ui = {
 function freshDraft(){
   return {
     mode: "manual",
+    pasteText: "",
     title: "", cover: null,
     ingredients: [{name:"",amount:"",unit:""}],
     steps: [""],
@@ -257,6 +304,7 @@ function freshDraft(){
 function openEditModal(r){
   ui.draft = {
     mode: "manual",
+    pasteText: "",
     title: r.title || "",
     cover: r.cover || null,
     coverIsWebLink: !!r.coverIsWebLink,
@@ -360,40 +408,93 @@ function cleanMarkdownLine(line){
     .trim();
 }
 
-var NOISE_LINE_RE = /^(advertisement|subscribe|sign up|newsletter|follow us|print(\s+recipe)?|save(\s+recipe)?|share(\s+(this|on))?|jump to recipe|jump to video|rate this recipe|leave a (comment|reply)|\d+\s*comments?|related (posts?|recipes?)|you (might|may) also like|home\s*[>»]|©|all rights reserved|privacy policy|terms of (service|use)|cookie(s)?( policy| settings)?|pin(\s*it)?|tweet|email this|log in|sign in|search|menu|skip to (content|recipe)|about (us|me)|contact( us)?|(facebook|instagram|pinterest|twitter|youtube|tiktok)|\d+(\.\d+)?\s*(stars?|votes?|ratings?)|prep time|cook time|total time|servings?|yield|calories|nutrition( facts| information)?)/i;
+var NOISE_LINE_RE = new RegExp(
+  '^(?:' +
+  '(?:print(?: recipe)?|save(?: recipe)?|share(?: this| on)?|pin(?: it)?|tweet|email this|log in|sign in|search|menu|skip to (?:content|recipe)|about (?:us|me)|contact(?: us)?|facebook|instagram|pinterest|twitter|youtube|tiktok)\\s*[:!\u00bb\u203a>]*$' +
+  '|(?:advertisement|subscribe|sign up|newsletter|follow us|jump to (?:recipe|video)|rate this recipe|related (?:posts?|recipes?)|you (?:might|may) also like|leave a (?:comment|reply))\\b' +
+  '|\\d+\\s*comments?$' +
+  '|home\\s*[>\u00bb]' +
+  '|\u00a9' +
+  '|\\d+(?:\\.\\d+)?\\s*(?:stars?|votes?|ratings?)\\b' +
+  '|(?:prep time|cook time|total time|servings?|yield|calories|nutrition)\\b' +
+  ')|all rights reserved|privacy policy|^terms of (?:service|use)|^cookies?\\s*(?:policy|settings|notice|consent)', 'i');
+
+var FRAC = '\u00bc\u00bd\u00be\u2150-\u215e';
+var UNIT_WORDS = "cups?|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|kilograms?|ml|millilitres?|milliliters?|l|litres?|liters?|oz|ounces?|lbs?|pounds?|cloves?|slices?|pinch(?:es)?|cans?|tins?|packets?|sprigs?|bunch(?:es)?|handfuls?|dash(?:es)?|knobs?|sticks?|stalks?|rashers?|fillets?";
+var INGREDIENT_RE = new RegExp(
+  '^(?:((?:\\d|[' + FRAC + '])[\\d' + FRAC + '\\s./]*(?:\\s*(?:-|\u2013|to)\\s*[\\d' + FRAC + '][\\d' + FRAC + '\\s./]*)?)\\s*)?' +
+  '(?:(' + UNIT_WORDS + ')(?![A-Za-z])\\.?\\s*)?(?:of\\s+)?(.*)$', 'i');
 
 function parseIngredientLine(line){
-  line = line.replace(/^[-*•\u2022]\s*/, '').trim();
-  var unitWords = "cups?|tbsp|tablespoons?|tsp|teaspoons?|g|grams?|kg|kilograms?|ml|millilitres?|milliliters?|l|litres?|liters?|oz|ounces?|lbs?|pounds?|cloves?|slices?|pinch(?:es)?|cans?|packets?|sprigs?";
-  var re = new RegExp('^([\\d\u00bc\u00bd\u00be\\.\\/\\s]+)?\\s*(' + unitWords + ')?\\.?\\s*(.*)$', 'i');
-  var m = line.match(re);
+  line = String(line).replace(/^[\s\-*\u2022\u25a1\u2610\u25aa]+/, '').trim();
+  var m = line.match(INGREDIENT_RE);
   if(!m || !m[3]) return { name: line, amount: "", unit: "" };
-  return { name: m[3].trim(), amount: (m[1]||"").trim(), unit: (m[2]||"").trim() };
+  return { name: m[3].trim(), amount: (m[1]||"").replace(/\s+/g, ' ').trim(), unit: (m[2]||"").trim() };
+}
+
+var ING_HEAD_RE = /^(?:the\s+)?(?:ingredients?|what you(?:'|\u2019)?ll need|you(?:'|\u2019)?ll need|you will need)\s*(?:\([^)]*\))?\s*[:\-\u2013]*\s*$/i;
+var STEP_HEAD_RE = /^(?:method|instructions?|directions?|steps?|preparation|how to make(?: it)?|to make)\s*(?:\([^)]*\))?\s*[:\-\u2013]*\s*$/i;
+var NUMBERED_STEP_RE = /^(?:step\s*)?\d+\s*[.):\-]\s+\S/i;
+
+function cleanStepLine(l){
+  return l.replace(/^[\s\-*\u2022]+/, '').replace(/^(?:step\s*)?\d+\s*[.):\-]\s*/i, '').trim();
+}
+function looksLikeIngredient(l){
+  if(NUMBERED_STEP_RE.test(l) && !/^\d+\s*[.)]\s+\d/.test(l) && /[a-z]{3,}\s+[a-z]{3,}\s+[a-z]{3,}\s+[a-z]{3,}/i.test(l)) return false;
+  if(/^[\-*\u2022\u25a1\u2610]/.test(l)) return true;
+  if(/^(?:\d|[' + FRAC + '])/.test(l)) return true;
+  return l.length <= 50 && !/[.!?]$/.test(l);
 }
 
 function heuristicParseRecipeText(text){
-  var lines = text.split(/\r?\n/)
+  var lines = String(text || "").replace(/\r\n?/g, '\n').split('\n')
     .map(function(l){ return cleanMarkdownLine(l.trim()); })
-    .filter(function(l){ return l && l.length > 1 && !NOISE_LINE_RE.test(l); });
-  if(lines.length === 0) return { title: "", ingredients: [], steps: [] };
-  var title = lines[0];
-  var ingredientsIdx = -1, stepsIdx = -1;
-  lines.forEach(function(l, i){
-    if(ingredientsIdx === -1 && /^ingredients?\b[:\s]*$/i.test(l)) ingredientsIdx = i;
-    if(stepsIdx === -1 && /^(method|instructions?|directions?|steps?)\b[:\s]*$/i.test(l)) stepsIdx = i;
-  });
-  var ingredientLines = [], stepLines = [];
-  if(ingredientsIdx > -1 && stepsIdx > ingredientsIdx){
-    ingredientLines = lines.slice(ingredientsIdx+1, stepsIdx);
-    stepLines = lines.slice(stepsIdx+1, stepsIdx + 60);
-  } else {
-    lines.slice(1).forEach(function(l){
-      if(/^[\d\u00bc\u00bd\u00be]/.test(l) || /^[-*•\u2022]/.test(l)) ingredientLines.push(l);
-      else if(l.length > 3) stepLines.push(l);
+    .filter(function(l){
+      return l && l.length > 1 && !NOISE_LINE_RE.test(l) && !/^step\s*\d+\s*[:.]?$/i.test(l);
     });
+  if(lines.length === 0) return { title: "", ingredients: [], steps: [] };
+  var ingIdx = -1, stepIdx = -1;
+  lines.forEach(function(l, i){
+    if(ingIdx === -1 && ING_HEAD_RE.test(l)) ingIdx = i;
+    if(stepIdx === -1 && STEP_HEAD_RE.test(l)) stepIdx = i;
+  });
+  var firstHead = (ingIdx === -1) ? stepIdx : (stepIdx === -1 ? ingIdx : Math.min(ingIdx, stepIdx));
+  var title = "";
+  if(firstHead === -1 || firstHead > 0) title = lines[0].replace(/^(?:recipe|title)\s*[:\-]\s*/i, '');
+  var bodyStart = title ? 1 : 0;
+  var ingLines = [], stepLines = [];
+
+  if(ingIdx > -1 && stepIdx > -1){
+    if(stepIdx > ingIdx){ ingLines = lines.slice(ingIdx + 1, stepIdx); stepLines = lines.slice(stepIdx + 1); }
+    else { stepLines = lines.slice(stepIdx + 1, ingIdx); ingLines = lines.slice(ingIdx + 1); }
+  } else if(ingIdx > -1){
+    var rest = lines.slice(ingIdx + 1), k = 0;
+    while(k < rest.length && looksLikeIngredient(rest[k])) k++;
+    ingLines = rest.slice(0, k); stepLines = rest.slice(k);
+  } else if(stepIdx > -1){
+    ingLines = lines.slice(bodyStart, stepIdx).filter(looksLikeIngredient);
+    stepLines = lines.slice(stepIdx + 1);
+  } else {
+    var body = lines.slice(bodyStart);
+    var firstNum = -1;
+    body.forEach(function(l, i){ if(firstNum === -1 && NUMBERED_STEP_RE.test(l) && /[a-z]{3,}/i.test(l) && !/^\d+\s*[.)]?\s*(?:g|kg|ml|l|oz|lbs?|cups?|tbsp|tsp)\b/i.test(l)) firstNum = i; });
+    if(firstNum > -1){
+      ingLines = body.slice(0, firstNum).filter(looksLikeIngredient);
+      stepLines = body.slice(firstNum);
+    } else {
+      body.forEach(function(l){
+        if(/^[\d\u00bc\u00bd\u00be]/.test(l) || /^[\-*\u2022]/.test(l)) ingLines.push(l);
+        else if(l.length > 3) stepLines.push(l);
+      });
+    }
   }
-  var ingredients = ingredientLines.map(parseIngredientLine).filter(function(i){ return i.name && i.name.length < 120; });
-  var steps = stepLines.filter(function(l){ return l.length > 3 && l.length < 600 && !/^(ingredients?|method|instructions?|directions?|steps?)[:\s]*$/i.test(l); });
+  var ingredients = ingLines
+    .filter(function(l){ return !/^for the\b.*:?$/i.test(l) && !ING_HEAD_RE.test(l) && !STEP_HEAD_RE.test(l); })
+    .map(parseIngredientLine)
+    .filter(function(i){ return i.name && i.name.length < 120; });
+  var steps = stepLines
+    .map(cleanStepLine)
+    .filter(function(l){ return l.length > 3 && l.length < 800 && !ING_HEAD_RE.test(l) && !STEP_HEAD_RE.test(l); });
   return { title: title, ingredients: ingredients, steps: steps };
 }
 
@@ -1060,7 +1161,7 @@ function syncChipHtml(){
 }
 
 function ensureSyncDraft(){
-  if(!ui.syncDraft) ui.syncDraft = { email: "", password: "", error: "", info: "", busy: false };
+  if(!ui.syncDraft) ui.syncDraft = { email: "", password: "", error: "", info: "", busy: false, mode: "signin" };
   return ui.syncDraft;
 }
 
@@ -1074,15 +1175,18 @@ function renderLoginScreen(){
     html += '<div class="status-line"><span class="spinner"></span> Checking sign-in…</div>';
   } else if(sync.auth){
     html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:-6px;">Your recipes, pantry and shopping list follow you to every device you sign in on.</p>';
-    html += '<div class="field-group"><label class="field">Email</label><input type="text" id="sync-email" autocomplete="email" autocapitalize="off" value="' + esc(sd.email) + '"></div>';
-    html += '<div class="field-group"><label class="field">Password</label><input type="password" id="sync-password" autocomplete="current-password" value="' + esc(sd.password) + '"></div>';
+    var creating = sd.mode === 'create';
+    html += '<form id="sync-form" method="post" action="#" novalidate>';
+    html += '<div class="field-group"><label class="field" for="sync-email">Email</label><input type="email" id="sync-email" name="email" autocomplete="username" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" value="' + esc(sd.email) + '"></div>';
+    html += '<div class="field-group"><label class="field" for="sync-password">' + (creating ? 'Choose a password' : 'Password') + '</label><input type="password" id="sync-password" name="password" autocomplete="' + (creating ? 'new-password' : 'current-password') + '" value="' + esc(sd.password) + '"></div>';
     if(sd.error) html += '<p class="error-line">' + esc(sd.error) + '</p>';
     if(sd.info) html += '<p style="font-size:12px;color:var(--basil-dark);">' + esc(sd.info) + '</p>';
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-    html += '<button class="btn btn-primary" id="sync-signin-btn" ' + (sd.busy ? 'disabled' : '') + '>Sign in</button>';
-    html += '<button class="btn btn-accent" id="sync-create-btn" ' + (sd.busy ? 'disabled' : '') + '>Create account</button>';
-    html += '</div>';
-    html += '<p style="margin:12px 0 0;"><button class="back-link" id="sync-reset-btn" style="margin:0;" ' + (sd.busy ? 'disabled' : '') + '>Forgot password?</button></p>';
+    if(creating) html += '<button type="submit" class="btn btn-accent" id="sync-create-btn" style="width:100%;" ' + (sd.busy ? 'disabled' : '') + '>Create account</button>';
+    else html += '<button type="submit" class="btn btn-primary" id="sync-signin-btn" style="width:100%;" ' + (sd.busy ? 'disabled' : '') + '>Sign in</button>';
+    html += '</form>';
+    html += '<p style="margin:14px 0 0;font-size:13px;color:var(--ink-soft);">' + (creating ? 'Already have an account? ' : 'New here? ') + '<button type="button" class="back-link" id="sync-mode-btn" style="margin:0;text-decoration:underline;font-size:13px;" ' + (sd.busy ? 'disabled' : '') + '>' + (creating ? 'Sign in' : 'Create an account') + '</button></p>';
+    if(!creating) html += '<p style="margin:8px 0 0;"><button type="button" class="back-link" id="sync-reset-btn" style="margin:0;" ' + (sd.busy ? 'disabled' : '') + '>Forgot password?</button></p>';
+    html += '<p style="margin:12px 0 0;font-size:11px;color:var(--ink-soft);">Tip: on iPhone, iPad and Mac, let Safari save the password to iCloud Keychain (or your password manager) and next time you can sign in with Face ID / Touch ID \u2014 no typing.</p>';
   } else {
     html += '<div class="notice err">' + esc(sync.error || 'Couldn’t connect.') + '</div>';
     html += '<p style="font-size:12px;color:var(--ink-soft);">Recipe Box needs a connection, and needs to be opened from its web address rather than as a downloaded file.</p>';
@@ -1120,10 +1224,15 @@ function attachSyncHandlers(){
   var emailEl = document.getElementById('sync-email');
   var passEl = document.getElementById('sync-password');
   if(emailEl) emailEl.oninput = function(){ sd.email = emailEl.value; };
-  if(passEl){
-    passEl.oninput = function(){ sd.password = passEl.value; };
-    passEl.onkeydown = function(e){ if(e.key === 'Enter') runAuth('signin'); };
-  }
+  if(passEl) passEl.oninput = function(){ sd.password = passEl.value; };
+  var formEl = document.getElementById('sync-form');
+  if(formEl) formEl.onsubmit = function(e){ e.preventDefault(); runAuth(sd.mode === 'create' ? 'create' : 'signin'); return false; };
+  var modeBtn = document.getElementById('sync-mode-btn');
+  if(modeBtn) modeBtn.onclick = function(){
+    if(emailEl) sd.email = emailEl.value.trim();
+    if(passEl) sd.password = passEl.value;
+    sd.mode = sd.mode === 'create' ? 'signin' : 'create'; sd.error = ""; sd.info = ""; render();
+  };
 
   function runAuth(kind){
     if(emailEl) sd.email = emailEl.value.trim();
@@ -1135,14 +1244,10 @@ function attachSyncHandlers(){
     var p = (kind === 'create')
       ? sync.auth.createUserWithEmailAndPassword(sd.email, sd.password)
       : sync.auth.signInWithEmailAndPassword(sd.email, sd.password);
-    p.then(function(){ sd.password = ""; }).catch(function(err){ sd.error = friendlySyncError(err); }).then(function(){
+    p.then(function(){ sd.password = ""; sd.mode = "signin"; }).catch(function(err){ sd.error = friendlySyncError(err); }).then(function(){
       sd.busy = false; render();
     });
   }
-  var signInBtn = document.getElementById('sync-signin-btn');
-  if(signInBtn) signInBtn.onclick = function(){ runAuth('signin'); };
-  var createBtn = document.getElementById('sync-create-btn');
-  if(createBtn) createBtn.onclick = function(){ runAuth('create'); };
   var resetBtn = document.getElementById('sync-reset-btn');
   if(resetBtn) resetBtn.onclick = function(){
     if(emailEl) sd.email = emailEl.value.trim();
@@ -1221,7 +1326,7 @@ function renderApp(){
   html += syncChipHtml();
   html += '<button class="btn btn-ghost btn-sm" id="export-btn">Download my book</button>';
   html += '<button class="btn btn-ghost btn-sm" id="header-signout-btn">Sign out</button>';
-  html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Import backup<input type="file" accept=".json" id="import-input" style="display:none;"></label>';
+  html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Import .json<input type="file" accept=".json,application/json,text/plain" id="import-input" style="display:none;"></label>';
   html += '</div></header>';
 
   if(ui.saveError){
@@ -1475,21 +1580,41 @@ function renderAddModal(){
   html += '<h3>' + (ui.editingRecipeId ? 'Edit recipe' : 'Add a recipe') + '</h3>';
   html += '<div class="add-mode-tabs">';
   html += '<button class="btn btn-sm ' + (d.mode==="manual"?"btn-primary":"btn-ghost") + '" data-mode="manual">Type it in</button>';
+  html += '<button class="btn btn-sm ' + (d.mode==="text"?"btn-primary":"btn-ghost") + '" data-mode="text">Paste text</button>';
   html += '<button class="btn btn-sm ' + (d.mode==="photo"?"btn-primary":"btn-ghost") + '" data-mode="photo">From photo(s)</button>';
   html += '<button class="btn btn-sm ' + (d.mode==="url"?"btn-primary":"btn-ghost") + '" data-mode="url">From link / YouTube</button>';
+  html += '<button class="btn btn-sm ' + (d.mode==="json"?"btn-primary":"btn-ghost") + '" data-mode="json">.json file</button>';
   html += '</div>';
 
-  if(d.mode === "photo" || d.mode === "url"){
+  if(d.mode === "photo" || d.mode === "url" || d.mode === "text"){
     html += '<div class="chip-row" style="margin-bottom:6px;">';
     html += '<span style="font-size:11px;color:var(--ink-soft);align-self:center;margin-right:2px;">Extraction:</span>';
     html += '<button class="chip' + (!d.useLocalExtraction?" active":"") + '" data-extract-mode="ai">AI (best results)</button>';
     html += '<button class="chip' + (d.useLocalExtraction?" active":"") + '" data-extract-mode="local">Local, no AI (free)</button>';
     html += '</div>';
-    if(d.useLocalExtraction){
+    if(d.mode === "text"){
+      html += '<p style="font-size:11px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin-bottom:12px;">' + (d.useLocalExtraction
+        ? 'No AI or key needed. Works best when the text has an \u201cIngredients\u201d heading and a \u201cMethod\u201d (or numbered steps). You can fix anything it gets wrong before saving.'
+        : 'AI tidies up even messy text \u2014 a copied web page, a message from a friend, a caption \u2014 into ingredients and steps. Needs API access, same as the other AI options.') + '</p>';
+    } else if(d.useLocalExtraction){
       html += '<p style="font-size:11px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin-bottom:12px;">No AI or key needed. For links, this reads structured recipe data already on the page (works well on most recipe sites, weaker on YouTube). For photos, it uses on-device text recognition \u2014 works on clearly printed text, not on photos of a finished dish with no writing, and struggles with handwriting. <strong>Note:</strong> this needs to reach outside sites directly, which only works when this file is downloaded and opened in your own browser \u2014 it\'s blocked while previewing inside Claude\'s chat, where "AI" mode is the one that works instead.</p>';
     } else {
       html += '<p style="font-size:11px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin-bottom:12px;">Best results, including inferring a recipe from a photo of a finished dish. Needs API access \u2014 automatic while this file is open inside Claude\'s chat, or add your own key in Settings if you\'ve downloaded the file.</p>';
     }
+  }
+
+  if(d.mode === "text"){
+    html += '<div class="field-group"><label class="field">Paste the recipe text</label>';
+    html += '<textarea class="paste-box" id="text-input" rows="10" placeholder="Paste a whole recipe here \u2014 title, ingredients and method \u2014 from a website, message, email or notes.">' + esc(d.pasteText) + '</textarea>';
+    html += '<button class="btn btn-primary" style="margin-top:10px;" id="extract-text-btn" ' + (d.loading?"disabled":"") + '>' + (d.loading ? "Working it out..." : "Make it a recipe") + '</button>';
+    if(d.loading) html += '<div class="status-line"><span class="spinner"></span> Reading your text...</div>';
+    html += '</div>';
+  }
+
+  if(d.mode === "json"){
+    html += '<div class="field-group"><label class="field">Import from a .json file</label>';
+    html += '<label class="dropzone">Click to choose a .json file<input type="file" accept=".json,application/json,text/plain" id="json-input" style="display:none;"></label>';
+    html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:8px;">Understands a shared Recipe Box recipe, a full Recipe Box backup, and recipe data from other apps and sites (schema.org Recipe, or any file with a title, ingredients and steps \u2014 one recipe or a whole list). One recipe opens in the form so you can check it; several are added straight away.</p></div>';
   }
 
   if(d.mode === "photo"){
@@ -1567,6 +1692,8 @@ function syncDraftFromDom(){
   if(titleEl) d.title = titleEl.value;
   var urlEl = document.getElementById('url-input');
   if(urlEl) d.url = urlEl.value;
+  var textEl = document.getElementById('text-input');
+  if(textEl) d.pasteText = textEl.value;
   d.ingredients.forEach(function(ing, i){
     var n = document.getElementById('ing-name-'+i), a = document.getElementById('ing-amount-'+i), u = document.getElementById('ing-unit-'+i);
     if(n) ing.name = n.value;
@@ -1855,6 +1982,18 @@ function attachModalHandlers(){
   }
   var extractPhotoBtn = document.getElementById('extract-photo-btn');
   if(extractPhotoBtn) extractPhotoBtn.onclick = function(){ d.useLocalExtraction ? extractFromPhotosLocal() : extractFromPhotos(); };
+
+  var textInput = document.getElementById('text-input');
+  if(textInput) textInput.oninput = function(){ d.pasteText = textInput.value; };
+  var extractTextBtn = document.getElementById('extract-text-btn');
+  if(extractTextBtn) extractTextBtn.onclick = function(){ d.useLocalExtraction ? extractFromTextLocal() : extractFromText(); };
+  var jsonInput = document.getElementById('json-input');
+  if(jsonInput) jsonInput.onchange = function(e){
+    var f = e.target.files[0];
+    if(!f) return;
+    readJsonFile(f, true);
+    e.target.value = "";
+  };
 
   var urlInput = document.getElementById('url-input');
   if(urlInput) urlInput.oninput = function(){ d.url = urlInput.value; };
@@ -2221,57 +2360,237 @@ function copyRecipeAsText(r){
     fallbackCopy();
   }
 }
+/* ---------- paste-text import ---------- */
+function extractFromTextLocal(){
+  var d = ui.draft;
+  syncDraftFromDom();
+  if(!d.pasteText.trim()){ d.error = "Paste some recipe text first."; render(); return; }
+  var parsed = heuristicParseRecipeText(d.pasteText);
+  if(!parsed.ingredients.length && !parsed.steps.length){
+    d.error = "Couldn't spot any ingredients or method in that text. Try adding \u201cIngredients\u201d and \u201cMethod\u201d headings, or switch to the AI option.";
+    render(); return;
+  }
+  d.title = parsed.title || d.title || "";
+  d.ingredients = parsed.ingredients.length ? parsed.ingredients : [{name:"",amount:"",unit:""}];
+  d.steps = parsed.steps.length ? parsed.steps : [""];
+  d.mode = "manual";
+  d.error = "Worked this out from your text without AI \u2014 have a quick look over the ingredients and steps before saving.";
+  render();
+}
+
+function extractFromText(){
+  var d = ui.draft;
+  syncDraftFromDom();
+  if(!d.pasteText.trim()){ d.error = "Paste some recipe text first."; render(); return; }
+  d.loading = true; d.error = "";
+  render();
+  var prompt = "Below is text that contains a recipe (it may be messy: copied from a web page, a message, an email or a caption). Turn it into a clean recipe. Respond with ONLY valid JSON, no markdown fences, no preamble, in this exact shape:\n" +
+    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
+    "Keep amounts and units as written. Drop adverts, comments and unrelated text. Keep steps concise, in order, without numbering.\n\nTEXT:\n" + d.pasteText.slice(0, 12000);
+  runAI({ prompt: prompt, images: [], useWebSearch: false }).then(function(text){
+    var parsed = parseJsonLoose(text);
+    var ings = ((parsed && parsed.ingredients) || []).map(toIngredientObj).filter(Boolean);
+    var steps = toStepStrings(parsed && parsed.steps);
+    if(!ings.length && !steps.length) throw new Error("no recipe found");
+    d.title = (parsed.title || "").toString();
+    d.ingredients = ings.length ? ings : [{name:"",amount:"",unit:""}];
+    d.steps = steps.length ? steps : [""];
+    d.tags = filterKnownTags(parsed.tags);
+    d.mode = "manual";
+    if(!d.cover && d.title){
+      return autoFindCoverPhoto(d.title).then(function(url){
+        if(url){ d.cover = url; d.coverIsWebLink = true; }
+      }).catch(function(){ /* non-fatal */ });
+    }
+  }).then(function(){
+    d.loading = false; render();
+  }).catch(function(err){
+    d.error = friendlyErrorMessage(err, "Couldn't turn that into a recipe. Try again, or use the Local option.");
+    d.loading = false; render();
+  });
+}
+
+/* ---------- .json import ---------- */
+function stripHtml(v){
+  return String(v == null ? "" : v)
+    .replace(/<br\s*\/?>/gi, '\n').replace(/<\/(?:p|li|div)>/gi, '\n').replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#0?39;|&apos;/g, "'").replace(/&amp;/g, '&')
+    .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').trim();
+}
+function filterKnownTags(tags){
+  if(typeof tags === 'string') tags = tags.split(/[,;|]/);
+  if(!Array.isArray(tags)) return [];
+  var out = [];
+  tags.forEach(function(t){
+    var low = String(t).trim().toLowerCase();
+    ALL_TAGS.forEach(function(k){ if(k.toLowerCase() === low && out.indexOf(k) === -1) out.push(k); });
+  });
+  return out;
+}
+function toIngredientObj(x){
+  if(x == null) return null;
+  if(typeof x === 'string' || typeof x === 'number'){
+    var t = stripHtml(x);
+    return t ? parseIngredientLine(t) : null;
+  }
+  if(typeof x !== 'object') return null;
+  var name = x.name || x.ingredient || x.item || x.text || x.title || x.description;
+  if(!name) return null;
+  var amount = x.amount != null ? x.amount : (x.quantity != null ? x.quantity : (x.qty != null ? x.qty : ""));
+  var unit = x.unit || x.measure || x.units || "";
+  name = stripHtml(name);
+  if(!name) return null;
+  if(amount === "" && unit === "" && /^[\d\u00bc\u00bd\u00be]/.test(name)) return parseIngredientLine(name);
+  return { name: name, amount: String(amount).trim(), unit: String(unit).trim() };
+}
+function toIngredientList(v){
+  if(typeof v === 'string') v = stripHtml(v).split(/\n+/);
+  if(!Array.isArray(v)) return [];
+  return v.map(toIngredientObj).filter(function(i){ return i && i.name; });
+}
+function toStepStrings(v){
+  var out = [];
+  (function walk(x){
+    if(x == null) return;
+    if(typeof x === 'string'){
+      stripHtml(x).split(/\n+/).forEach(function(line){
+        line = cleanStepLine(line);
+        if(line) out.push(line);
+      });
+    } else if(Array.isArray(x)){ x.forEach(walk); }
+    else if(typeof x === 'object'){
+      if(x.itemListElement) walk(x.itemListElement);
+      else walk(x.text || x.step || x.instruction || x.description || x.name);
+    }
+  })(v);
+  return out;
+}
+function genericRecipeFromObject(o){
+  if(!o || typeof o !== 'object' || Array.isArray(o)) return null;
+  var title = o.title || o.name || o.recipeName || o.recipe_name || o.headline;
+  if(typeof title !== 'string' || !title.trim()) return null;
+  var rawIng = o.ingredients || o.recipeIngredient || o.ingredient || o.ingredientList || o.ingredients_list;
+  var rawSteps = o.steps || o.recipeInstructions || o.instructions || o.method || o.directions || o.preparation;
+  var ings = toIngredientList(rawIng);
+  var steps = toStepStrings(rawSteps);
+  if(!ings.length && !steps.length) return null;
+  var coverRaw = jsonLdImageToUrl(o.cover || o.image || o.photo || o.thumbnail || o.imageUrl);
+  var cover = (typeof coverRaw === 'string' && /^(?:https?:|data:image\/)/i.test(coverRaw)) ? coverRaw : null;
+  var src = o.originalUrl || o.sourceUrl || o.url || o.source;
+  return {
+    title: stripHtml(title) || "Untitled recipe",
+    cover: cover,
+    coverIsWebLink: !!cover && /^https?:/i.test(cover),
+    ingredients: ings, steps: steps,
+    tags: filterKnownTags(o.tags || o.keywords || o.recipeCategory),
+    originalUrl: (typeof src === 'string' && /^https?:/i.test(src)) ? src : undefined
+  };
+}
+function collectRecipesFromJson(j, out, depth){
+  if(j == null || depth > 4) return;
+  if(Array.isArray(j)){ j.forEach(function(x){ collectRecipesFromJson(x, out, depth + 1); }); return; }
+  if(typeof j !== 'object') return;
+  var g = genericRecipeFromObject(j);
+  if(g){ out.push(g); return; }
+  if(j["@graph"]) collectRecipesFromJson(j["@graph"], out, depth + 1);
+  ["recipes", "items", "data", "results", "recipe", "recipeList", "collection", "book"].forEach(function(k){
+    if(j[k]) collectRecipesFromJson(j[k], out, depth + 1);
+  });
+}
+function isRecipeBoxBackup(j){
+  if(!j || Array.isArray(j) || !Array.isArray(j.recipes)) return false;
+  if(j.recipes.length === 0) return Array.isArray(j.pantry) || Array.isArray(j.shopping);
+  return j.recipes.every(function(r){ return r && typeof r.title === 'string' && Array.isArray(r.ingredients) && Array.isArray(r.steps); });
+}
+function mergeBackup(imported){
+  var haveRecipe = {};
+  state.recipes.forEach(function(r){ haveRecipe[r.id] = true; });
+  var incoming = (imported.recipes || []).filter(function(r){
+    if(!r.id) r.id = uid();
+    r.makePhotos = r.makePhotos || []; r.tags = r.tags || []; r.createdAt = r.createdAt || Date.now();
+    return !haveRecipe[r.id];
+  });
+  state.recipes = incoming.concat(state.recipes);
+  if(state.pantry.length === 0) state.pantry = imported.pantry || [];
+  var haveShop = {};
+  state.shopping.forEach(function(x){ haveShop[x.id] = true; });
+  state.shopping = state.shopping.concat((imported.shopping || []).filter(function(x){ return !haveShop[x.id]; }));
+  if(imported.settings){
+    state.settings = Object.assign({}, imported.settings, {
+      apiConfig: state.settings.apiConfig,
+      firebaseConfig: state.settings.firebaseConfig
+    });
+  }
+  ui.apiDraft = null;
+  return incoming.length;
+}
+function recipeKey(r){ return (r.title || "").trim().toLowerCase() + "|" + ((r.steps && r.steps[0]) || "").trim().toLowerCase(); }
+function addImportedRecipes(list){
+  var have = {};
+  state.recipes.forEach(function(r){ have[recipeKey(r)] = true; });
+  var added = 0, skipped = 0;
+  list.slice().reverse().forEach(function(g){
+    var key = recipeKey(g);
+    if(have[key]){ skipped++; return; }
+    have[key] = true; added++;
+    state.recipes.unshift({
+      id: uid(), createdAt: Date.now(), title: g.title, cover: g.cover, coverIsWebLink: !!g.coverIsWebLink,
+      ingredients: g.ingredients, steps: g.steps, tags: g.tags || [], makePhotos: [], originalUrl: g.originalUrl
+    });
+  });
+  return { added: added, skipped: skipped };
+}
+function loadRecipeIntoForm(g){
+  var d = ui.draft;
+  d.title = g.title; d.cover = g.cover; d.coverIsWebLink = !!g.coverIsWebLink;
+  d.ingredients = g.ingredients.length ? g.ingredients : [{name:"",amount:"",unit:""}];
+  d.steps = g.steps.length ? g.steps : [""];
+  d.tags = (g.tags || []).slice();
+  d.url = g.originalUrl || "";
+  d.mode = "manual";
+  d.error = "Loaded from the file \u2014 check it over, then save.";
+}
+function readJsonFile(file, fromModal){
+  var reader = new FileReader();
+  reader.onerror = function(){ if(fromModal){ ui.draft.error = "Couldn't read that file."; render(); } else alert("Couldn't read that file."); };
+  reader.onload = function(ev){
+    var msg = "", j = null;
+    try{ j = JSON.parse(String(ev.target.result).replace(/^\uFEFF/, '')); }
+    catch(err){ msg = "That file isn't valid JSON."; }
+    if(!msg){
+      if(isRecipeBoxBackup(j)){
+        var n = mergeBackup(j);
+        if(fromModal){ ui.showAdd = false; ui.editingRecipeId = null; }
+        saveState();
+        alert("Backup imported \u2014 " + n + " new recipe" + (n === 1 ? "" : "s") + " merged into your collection.");
+        return;
+      }
+      var found = [];
+      collectRecipesFromJson(j, found, 0);
+      if(!found.length){
+        msg = "Couldn't find a recipe in that file. It needs a title plus ingredients and/or steps (a Recipe Box backup or shared recipe, or schema.org Recipe data, all work).";
+      } else if(found.length === 1 && fromModal){
+        loadRecipeIntoForm(found[0]);
+        render();
+        return;
+      } else {
+        var res = addImportedRecipes(found);
+        if(fromModal){ ui.showAdd = false; ui.editingRecipeId = null; }
+        saveState();
+        if(res.added === 1 && found.length === 1) alert('"' + found[0].title + '" was added to your recipes.');
+        else alert(res.added + " recipe" + (res.added === 1 ? "" : "s") + " added" + (res.skipped ? " (" + res.skipped + " already in your collection, skipped)." : "."));
+        return;
+      }
+    }
+    if(fromModal){ ui.draft.error = msg; render(); } else alert(msg);
+  };
+  reader.readAsText(file);
+}
+
 function importBackup(e){
   var file = e.target.files[0];
   if(!file) return;
-  var reader = new FileReader();
-  reader.onload = function(ev){
-    try{
-      var imported = JSON.parse(ev.target.result);
-      if(imported && Array.isArray(imported.recipes)){
-        var haveRecipe = {};
-        state.recipes.forEach(function(r){ haveRecipe[r.id] = true; });
-        var incoming = (imported.recipes || []).filter(function(r){
-          if(!r.id) r.id = uid();
-          return !haveRecipe[r.id];
-        });
-        state.recipes = incoming.concat(state.recipes);
-        if(state.pantry.length === 0) state.pantry = imported.pantry || [];
-        var haveShop = {};
-        state.shopping.forEach(function(s){ haveShop[s.id] = true; });
-        state.shopping = state.shopping.concat((imported.shopping || []).filter(function(s){ return !haveShop[s.id]; }));
-        if(imported.settings){
-          state.settings = Object.assign({}, imported.settings, {
-            apiConfig: state.settings.apiConfig,
-            firebaseConfig: state.settings.firebaseConfig
-          });
-        }
-        ui.apiDraft = null;
-        saveState();
-        alert("Backup imported \u2014 recipes merged into your collection.");
-      } else if(imported && imported.title && (Array.isArray(imported.ingredients) || Array.isArray(imported.steps))){
-        var shared = {
-          id: uid(), createdAt: Date.now(),
-          title: imported.title || "Untitled recipe",
-          cover: imported.cover || null,
-          coverIsWebLink: !!imported.coverIsWebLink,
-          ingredients: imported.ingredients || [],
-          steps: imported.steps || [],
-          tags: imported.tags || [],
-          makePhotos: [],
-          originalUrl: imported.originalUrl
-        };
-        state.recipes.unshift(shared);
-        saveState();
-        alert('"' + shared.title + '" was added to your recipes.');
-      } else {
-        alert("Couldn't read that file. Make sure it's a Recipe Box backup or a shared recipe .json");
-      }
-    }catch(err){
-      alert("Couldn't read that file. Make sure it's a Recipe Box backup or a shared recipe .json");
-    }
-  };
-  reader.readAsText(file);
+  readJsonFile(file, false);
   e.target.value = "";
 }
 
