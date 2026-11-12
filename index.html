@@ -417,16 +417,18 @@ var NOISE_LINE_RE = new RegExp(
   '|\u00a9' +
   '|\\d+(?:\\.\\d+)?\\s*(?:stars?|votes?|ratings?)\\b' +
   '|(?:prep time|cook time|total time|servings?|yield|calories|nutrition)\\b' +
+  '|(?:preparation|prep|cooking|cook|serves|makes|total)\\s*:?\\s*\\d' +
   ')|all rights reserved|privacy policy|^terms of (?:service|use)|^cookies?\\s*(?:policy|settings|notice|consent)', 'i');
 
 var FRAC = '\u00bc\u00bd\u00be\u2150-\u215e';
-var UNIT_WORDS = "cups?|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|kilograms?|ml|millilitres?|milliliters?|l|litres?|liters?|oz|ounces?|lbs?|pounds?|cloves?|slices?|pinch(?:es)?|cans?|tins?|packets?|sprigs?|bunch(?:es)?|handfuls?|dash(?:es)?|knobs?|sticks?|stalks?|rashers?|fillets?";
+var UNIT_WORDS = "cups?|tbsps?|tablespoons?|tsps?|teaspoons?|g|grams?|kg|kilograms?|ml|millilitres?|milliliters?|l|litres?|liters?|oz|ounces?|lbs?|pounds?|cloves?|slices?|pinch(?:es)?|cans?|tins?|packets?|sprigs?|bunch(?:es)?|handfuls?|dash(?:es)?|knobs?|sticks?|stalks?|rashers?|fillets?|squeezes?|splash(?:es)?|drizzles?|glugs?";
 var INGREDIENT_RE = new RegExp(
   '^(?:((?:\\d|[' + FRAC + '])[\\d' + FRAC + '\\s./]*(?:\\s*(?:-|\u2013|to)\\s*[\\d' + FRAC + '][\\d' + FRAC + '\\s./]*)?)\\s*)?' +
   '(?:(' + UNIT_WORDS + ')(?![A-Za-z])\\.?\\s*)?(?:of\\s+)?(.*)$', 'i');
 
 function parseIngredientLine(line){
   line = String(line).replace(/^[\s\-*\u2022\u25a1\u2610\u25aa]+/, '').trim();
+  line = line.replace(/^(?:an?|some)\s+(?=(?:pinch|handful|squeeze|dash|knob|splash|drizzle|glug)\b)/i, '');
   var m = line.match(INGREDIENT_RE);
   if(!m || !m[3]) return { name: line, amount: "", unit: "" };
   return { name: m[3].trim(), amount: (m[1]||"").replace(/\s+/g, ' ').trim(), unit: (m[2]||"").trim() };
@@ -446,8 +448,27 @@ function looksLikeIngredient(l){
   return l.length <= 50 && !/[.!?]$/.test(l);
 }
 
+
+var TRAIL_RE = /^(?:what to serve|serving suggestions?|my (?:little )?tips?\b|tips?\s*:|notes?\s*:|enjoy\b|i think\b|hope you\b|happy cooking)/i;
+var TAG_WORDS_RE = /\s+(?:(?:Easy|Quick|Simple|Vegetarian|Vegan|One\s?pan|One\s?pot|Healthy|Gluten-free|Dairy-free)\s*)+$/;
+
+/* Text pasted from a chat or a web page often arrives as one long line. Put the line breaks back. */
+function explodeBlob(text){
+  text = text.replace(/\r\n?/g, '\n').replace(/[☀-➿️]|[\uD83C-\uDBFF][\uDC00-\uDFFF]/g, '');
+  return text.split('\n').map(function(line){
+    if(line.length < 200 && (line.match(/\s\*\s+/g) || []).length < 3) return line;
+    return line
+      .replace(/\s\*\s+/g, '\n* ')
+      .replace(/\s(PREPARATION|PREP|COOKING|COOK|SERVES|MAKES|YIELD|TOTAL TIME)(?=\s)/g, '\n$1')
+      .replace(/\s(Ingredients|INGREDIENTS|Method|METHOD|Instructions|INSTRUCTIONS|Directions|DIRECTIONS)\s*:?\s+(?=\*|\d+[.)]|[A-Z0-9])/g, '\n$1\n')
+      .replace(/\s(What to serve with it|Serving suggestions?|My little tip|My tip|Tips?:|Notes?:)/g, '\n$1')
+      .replace(/\s(\d{1,2})[.)]\s+(?=[A-Z])/g, '\n$1. ')
+      .replace(/\s(Enjoy!)/g, '\n$1');
+  }).join('\n');
+}
+
 function heuristicParseRecipeText(text){
-  var lines = String(text || "").replace(/\r\n?/g, '\n').split('\n')
+  var lines = explodeBlob(String(text || "")).split('\n')
     .map(function(l){ return cleanMarkdownLine(l.trim()); })
     .filter(function(l){
       return l && l.length > 1 && !NOISE_LINE_RE.test(l) && !/^step\s*\d+\s*[:.]?$/i.test(l);
@@ -459,9 +480,21 @@ function heuristicParseRecipeText(text){
     if(stepIdx === -1 && STEP_HEAD_RE.test(l)) stepIdx = i;
   });
   var firstHead = (ingIdx === -1) ? stepIdx : (stepIdx === -1 ? ingIdx : Math.min(ingIdx, stepIdx));
-  var title = "";
-  if(firstHead === -1 || firstHead > 0) title = lines[0].replace(/^(?:recipe|title)\s*[:\-]\s*/i, '');
-  var bodyStart = title ? 1 : 0;
+  var title = "", titleTags = [], bodyStart = 0;
+  if(firstHead === -1 || firstHead > 0){
+    var limit = firstHead === -1 ? Math.min(lines.length, 4) : firstHead;
+    var pick = -1, pickText = "";
+    for(var t = 0; t < limit; t++){
+      var cand = lines[t];
+      if(cand.length > 80){ var tm = cand.match(/^[\s\S]*[.!?]\s+([^.!?]{3,}?)$/); if(tm) cand = tm[1]; }
+      if(pick === -1){ pick = t; pickText = cand; }
+      if(!/[.!?:]$/.test(cand) && cand.length <= 100){ pick = t; pickText = cand; break; }
+    }
+    var tagM = pickText.match(TAG_WORDS_RE);
+    if(tagM){ titleTags = filterKnownTags(tagM[0].replace(/([a-z])(?=[A-Z])/g, '$1,').split(/[,\s]+/)); pickText = pickText.replace(TAG_WORDS_RE, ''); }
+    title = pickText.replace(/^(?:recipe|title)\s*[:\-]\s*/i, '').trim();
+    bodyStart = pick + 1;
+  }
   var ingLines = [], stepLines = [];
 
   if(ingIdx > -1 && stepIdx > -1){
@@ -488,6 +521,7 @@ function heuristicParseRecipeText(text){
       });
     }
   }
+  for(var q = 0; q < stepLines.length; q++){ if(TRAIL_RE.test(stepLines[q])){ stepLines = stepLines.slice(0, q); break; } }
   var ingredients = ingLines
     .filter(function(l){ return !/^for the\b.*:?$/i.test(l) && !ING_HEAD_RE.test(l) && !STEP_HEAD_RE.test(l); })
     .map(parseIngredientLine)
@@ -495,7 +529,13 @@ function heuristicParseRecipeText(text){
   var steps = stepLines
     .map(cleanStepLine)
     .filter(function(l){ return l.length > 3 && l.length < 800 && !ING_HEAD_RE.test(l) && !STEP_HEAD_RE.test(l); });
-  return { title: title, ingredients: ingredients, steps: steps };
+  /* steps written as "Brown the halloumi Cut it into slices..." -> "Brown the halloumi: Cut it into slices..." */
+  var SPLIT_RE = /^([A-Z][^.!?:]{2,40}?)\s+([A-Z][a-z][\s\S]*[.!?])$/;
+  var splittable = steps.filter(function(l){ var m = l.match(SPLIT_RE); return m && m[1].split(/\s+/).length <= 6; }).length;
+  if(steps.length >= 2 && splittable / steps.length >= 0.75){
+    steps = steps.map(function(l){ var m = l.match(SPLIT_RE); return (m && m[1].split(/\s+/).length <= 6) ? m[1] + ': ' + m[2] : l; });
+  }
+  return { title: title, ingredients: ingredients, steps: steps, tags: titleTags };
 }
 
 function extractYouTubeDescription(html){
@@ -2373,6 +2413,7 @@ function extractFromTextLocal(){
   d.title = parsed.title || d.title || "";
   d.ingredients = parsed.ingredients.length ? parsed.ingredients : [{name:"",amount:"",unit:""}];
   d.steps = parsed.steps.length ? parsed.steps : [""];
+  if(parsed.tags && parsed.tags.length) d.tags = parsed.tags;
   d.mode = "manual";
   d.error = "Worked this out from your text without AI \u2014 have a quick look over the ingredients and steps before saving.";
   render();
