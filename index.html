@@ -179,6 +179,21 @@
 
   .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
   .login-wrap{padding:16px 0;}
+  .method-bar{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
+  .method-bar .mb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .method-bar .mb-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--basil-dark);font-weight:700;}
+  .seg{display:inline-flex;border:1.5px solid var(--ink);border-radius:7px;overflow:hidden;background:var(--card);}
+  .seg button{border:none;background:none;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);border-right:1px solid var(--line);}
+  .seg button:last-child{border-right:none;}
+  .seg button.on{background:var(--ink);color:var(--card);}
+  .seg button:disabled{opacity:.6;cursor:wait;}
+  .mb-cap{font-size:12px;color:var(--ink-soft);margin:8px 0 0;line-height:1.45;}
+  .mb-note{font-size:12px;color:var(--ink-soft);font-style:italic;margin:6px 0 0;}
+  .timing-strip{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 0;font-size:12px;color:var(--ink-soft);}
+  .tm{background:rgba(217,164,65,.30);border-radius:3px;padding:0 3px;font-weight:700;}
+  .tidy-list{margin:6px 0 12px;padding-left:18px;font-size:13px;line-height:1.5;}
+  .tidy-after{font-size:13px;line-height:1.5;}
+  .tidy-after ol,.tidy-after ul{margin:4px 0 10px;padding-left:20px;}
   textarea.paste-box{min-height:200px;line-height:1.45;}
 
   /* phones and the iPhone home-screen web app */
@@ -205,6 +220,7 @@
     .overlay{padding:0;align-items:stretch;}
     .modal{border-radius:0;min-height:100%;max-width:none;padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
     .add-mode-tabs{flex-wrap:wrap;}
+    .seg{width:100%;} .seg button{flex:1;padding:10px 6px;}
     .add-mode-tabs button{flex:1 1 auto;}
     .login-card{padding:20px;}
   }
@@ -266,6 +282,7 @@ var state = {
 var ui = {
   loaded: false,
   pendingShare: null, shareLinks: {},
+  tidy: null, detailNote: "", detailLoadingLevel: "",
   tab: "recipes",
   openRecipeId: null,
   showAdd: false,
@@ -603,12 +620,34 @@ function extractRecipeFromHtml(html){
   return { title: title, ingredients: ingredients, steps: steps, image: image };
 }
 
+var TIME_RE = /\b\d+(?:\s*[\u2013-]\s*\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)\b|\b\d{2,3}\s*\u00b0\s*[CF]?|\b\d{2,3}\s*(?:\u00b0\s*)?[CF]\b|\bgas mark\s*\d+\b|\b\d{2,3}\s*degrees\b/gi;
+var FILLER_START_RE = /^(?:this (?:will|is|helps|gives|allows)|you(?:'|\u2019)?(?:ll| will| want| should)|it(?:'|\u2019)?s (?:important|worth)|don(?:'|\u2019)?t worry|feel free|if you like|if you prefer|trust me|remember[,:]?)\b/i;
+
+function splitSentences(text){
+  var m = String(text).match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [String(text)];
+  return m.map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function stepHasTimingOrTemp(sentence){ TIME_RE.lastIndex = 0; var r = TIME_RE.test(sentence); TIME_RE.lastIndex = 0; return r; }
+
+/* no-AI quick version: keep the action and anything with a time or temperature, drop padding, then merge short neighbours */
 function localQuickSteps(recipe){
-  return (recipe.steps||[]).map(function(step){
-    var idx = step.search(/[.!?]\s/);
-    if(idx > -1 && idx < step.length - 2) return step.slice(0, idx+1);
-    return step;
+  var steps = (recipe.steps || []).map(function(step){
+    var sentences = splitSentences(step);
+    if(sentences.length <= 1) return step;
+    var keep = [sentences[0]];
+    sentences.slice(1).forEach(function(sn){
+      if(FILLER_START_RE.test(sn)) return;
+      if(stepHasTimingOrTemp(sn)) keep.push(sn);
+    });
+    return keep.join(' ');
   });
+  var out = [];
+  steps.forEach(function(st){
+    var prev = out[out.length - 1];
+    if(prev && steps.length > 4 && (prev.length + st.length) <= 140 && out.length >= Math.ceil(steps.length / 2)) out[out.length - 1] = prev + ' ' + st;
+    else out.push(st);
+  });
+  return out;
 }
 
 function hasCustomApiConfigured(){
@@ -627,6 +666,7 @@ function getActiveProvider(){
 /* opts: {prompt: string, images: [{mediaType, base64}], useWebSearch: bool} */
 function runAI(opts){
   var prompt = opts.prompt;
+  var maxTokens = opts.maxTokens || 1500;
   var images = opts.images || [];
   var useWebSearch = !!opts.useWebSearch;
   var active = getActiveProvider();
@@ -642,7 +682,7 @@ function runAI(opts){
       return { type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } };
     }).concat([{ type: "text", text: prompt }]);
     var messages = [{ role: "user", content: images.length ? content : prompt }];
-    var body = { model: (active.mode === "custom" ? (active.model || "claude-sonnet-5") : "claude-sonnet-4-6"), max_tokens: 1500, messages: messages };
+    var body = { model: (active.mode === "custom" ? (active.model || "claude-sonnet-5") : "claude-sonnet-4-6"), max_tokens: maxTokens, messages: messages };
     if(useWebSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
 
     var headers = { "Content-Type": "application/json" };
@@ -673,7 +713,7 @@ function runAI(opts){
   }).concat([{ type: "text", text: prompt }]);
   var oMessages = [{ role: "user", content: images.length ? oContent : prompt }];
   var oModel = useWebSearch ? "gpt-4o-search-preview" : (active.model || "gpt-4o");
-  var oBody = { model: oModel, max_tokens: 1500, messages: oMessages };
+  var oBody = { model: oModel, max_tokens: maxTokens, messages: oMessages };
   if(useWebSearch) oBody.web_search_options = {};
   return fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -706,6 +746,44 @@ function escapeRegex(str){
 }
 
 /* Inserts (amount unit) after the first mention of each ingredient name across the steps */
+function setMethodLevel(r, level){
+  ui.detailNote = "";
+  if(level === "detailed"){ ui.detailLevelOverride = "detailed"; render(); return; }
+  var key = level === "quick" ? "stepsQuick" : "stepsGuided";
+  var ai = getActiveProvider().mode !== "none";
+  var upgradeLocal = ai && level === "quick" && r.quickSource === "local";   /* a no-AI quick version gets upgraded once AI is available */
+  if(r[key] && r[key].length && !upgradeLocal){ ui.detailLevelOverride = level; render(); return; }
+  if(level === "guided" && !ai){
+    ui.detailNote = "The guided version is written by AI. Add your API key in Settings (or open this inside Claude) to switch it on.";
+    render(); return;
+  }
+  if(!ai){
+    r.stepsQuick = localQuickSteps(r); r.quickSource = "local";
+    ui.detailLevelOverride = "quick";
+    ui.detailNote = "Shortened without AI (kept the first action of each step and every timing, and joined small steps). Add an API key in Settings for a smarter rewrite.";
+    saveState(); return;
+  }
+  ui.summarizeLoadingId = r.id; ui.detailLoadingLevel = level;
+  render();
+  var gen = level === "quick" ? generateQuickSteps(r) : generateGuidedSteps(r);
+  gen.then(function(steps){
+    r[key] = steps; if(level === "quick") r.quickSource = "ai";
+    ui.summarizeLoadingId = null; ui.detailLevelOverride = level;
+    saveState();
+  }).catch(function(err){
+    ui.summarizeLoadingId = null;
+    if(level === "quick"){
+      r.stepsQuick = localQuickSteps(r); r.quickSource = "local";
+      ui.detailLevelOverride = "quick";
+      ui.detailNote = "The AI wasn't reachable, so this is a simple shortening instead. Tap Regenerate to try the AI again.";
+      saveState();
+    } else {
+      ui.detailNote = friendlyErrorMessage(err, "Couldn't write the guided version right now. Try again in a moment.");
+      render();
+    }
+  });
+}
+
 function annotateStepsWithQuantities(recipe, steps){
   var seen = {};
   return steps.map(function(step){
@@ -727,15 +805,174 @@ function annotateStepsWithQuantities(recipe, steps){
   });
 }
 
+function stepsPromptList(recipe){
+  return (recipe.steps||[]).map(function(st,i){ return (i+1) + ". " + st; }).join("\n");
+}
 function generateQuickSteps(recipe){
-  var prompt = "Condense this recipe's method into a shorter, faster-to-scan version for someone short on time. " +
-    "Combine or drop minor detail but keep every essential action and any critical timing/temperature. Aim for roughly half as many steps where sensible.\n\n" +
-    "Title: " + recipe.title + "\n" +
-    "Current steps:\n" + (recipe.steps||[]).map(function(s,i){ return (i+1) + ". " + s; }).join("\n") + "\n\n" +
+  var prompt = "Rewrite this recipe's method as a QUICK version for a confident cook who is short on time.\n" +
+    "- Merge related steps and drop descriptive padding, but keep every essential action.\n" +
+    "- Keep ALL timings, temperatures and any cue that prevents a mistake.\n" +
+    "- Aim for about half the steps (never fewer than 3 unless the original has fewer), each under about 25 words, starting with a verb.\n" +
+    "- Do not invent anything that isn't in the original.\n\n" +
+    "Title: " + recipe.title + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
-  return runAI({ prompt: prompt, images: [], useWebSearch: false }).then(function(text){
-    var parsed = parseJsonLoose(text);
-    return (parsed.steps && parsed.steps.length) ? parsed.steps : recipe.steps;
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 2000 }).then(function(text){
+    var steps = toStepStrings(parseJsonLoose(text).steps);
+    return steps.length ? steps : recipe.steps;
+  });
+}
+function generateGuidedSteps(recipe){
+  var ing = (recipe.ingredients||[]).map(function(i){ return [i.amount, i.unit, i.name].filter(Boolean).join(' '); }).join('; ');
+  var prompt = "Rewrite this recipe's method as a GUIDED version for someone who wants to take their time and get it right.\n" +
+    "- Keep the same steps in the same order (same number of steps), but expand each one a little: what it should look, smell or sound like when it's ready, roughly how long, and the most common slip to avoid.\n" +
+    "- Keep the original timings and temperatures; where you add an approximate timing, say \"about\".\n" +
+    "- Do not add or change ingredients or quantities, and do not change the dish.\n" +
+    "- Each step 1-3 sentences, plain and friendly.\n\n" +
+    "Title: " + recipe.title + "\nIngredients: " + ing + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
+    "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
+    var steps = toStepStrings(parseJsonLoose(text).steps);
+    if(!steps.length) throw new Error("The guided version came back empty \u2014 please try again.");
+    return steps;
+  });
+}
+
+/* ---------- tidy up / consolidate ---------- */
+var UNIT_NORM = {tablespoon:'tbsp',tablespoons:'tbsp',tbsps:'tbsp',tbs:'tbsp',tbl:'tbsp',teaspoon:'tsp',teaspoons:'tsp',tsps:'tsp',
+  gram:'g',grams:'g',gm:'g',gms:'g',kilogram:'kg',kilograms:'kg',kilo:'kg',kilos:'kg',millilitre:'ml',millilitres:'ml',milliliter:'ml',milliliters:'ml',mls:'ml',
+  litre:'l',litres:'l',liter:'l',liters:'l',ounce:'oz',ounces:'oz',pound:'lb',pounds:'lb',lbs:'lb'};
+function normUnitStr(u){
+  var t = String(u || "").trim();
+  var k = t.toLowerCase().replace(/\.$/, '');
+  return UNIT_NORM[k] || t;
+}
+var FRAC_VAL = { '\u00bc': .25, '\u00bd': .5, '\u00be': .75, '\u2153': 1/3, '\u2154': 2/3, '\u215b': .125 };
+function parseAmountNum(a){
+  a = String(a == null ? "" : a).trim();
+  if(!a) return null;
+  var m;
+  if((m = a.match(/^(\d+)?\s*([\u00bc\u00bd\u00be\u2153\u2154\u215b])$/))) return (m[1] ? parseInt(m[1], 10) : 0) + FRAC_VAL[m[2]];
+  if((m = a.match(/^(\d+)\s+(\d+)\/(\d+)$/))) return parseInt(m[1], 10) + parseInt(m[2], 10) / parseInt(m[3], 10);
+  if((m = a.match(/^(\d+)\/(\d+)$/))) return parseInt(m[1], 10) / parseInt(m[2], 10);
+  if(/^\d+(\.\d+)?$/.test(a)) return parseFloat(a);
+  return null;
+}
+function formatAmountNum(n){
+  var whole = Math.floor(n + 1e-9), frac = n - whole;
+  var table = [[0, ''], [.25, '\u00bc'], [1/3, '\u2153'], [.5, '\u00bd'], [2/3, '\u2154'], [.75, '\u00be'], [1, '']];
+  for(var i = 0; i < table.length; i++){
+    if(Math.abs(frac - table[i][0]) < 0.02){
+      if(table[i][0] === 1) whole += 1;
+      var sym = table[i][1];
+      return (whole ? String(whole) : '') + sym || '0';
+    }
+  }
+  return String(Math.round(n * 100) / 100);
+}
+function tidyText(t){ return String(t == null ? "" : t).replace(/\s+/g, ' ').trim(); }
+
+function tidyRecipeLocal(rec){
+  var changes = [];
+  var title = tidyText(rec.title);
+  var t2 = title.replace(/\s*[|\u2013\u2014-]\s*[^|\u2013\u2014-]{0,40}$/, function(m){ return /recipe|kitchen|blog|cook|food|\.com/i.test(m) ? '' : m; });
+  t2 = t2.replace(/\s+recipe$/i, '');
+  if(t2 === t2.toUpperCase() && /[A-Z]{4,}/.test(t2)) t2 = t2.toLowerCase().replace(/(^|\s)([a-z])/g, function(m, a, b){ return a + b.toUpperCase(); });
+  if(t2 && t2 !== title){ changes.push('Title: \u201c' + title + '\u201d \u2192 \u201c' + t2 + '\u201d'); title = t2; }
+
+  /* ingredients */
+  var unitFixes = 0, nameFixes = 0, merged = [], dropped = 0;
+  var out = [], index = {};
+  (rec.ingredients || []).forEach(function(ing){
+    var name = tidyText(ing.name).replace(/[,;.]+$/, '').replace(/^of\s+/i, '');
+    var amount = tidyText(ing.amount), unitRaw = tidyText(ing.unit);
+    var unit = normUnitStr(unitRaw);
+    if(!name){ if(amount || unit) dropped++; return; }
+    if(unit !== unitRaw) unitFixes++;
+    var name2 = (name === name.toUpperCase() && name.length > 3) ? name.toLowerCase() : name;
+    if(name2 !== tidyText(ing.name)) nameFixes++;
+    name = name2;
+    var key = name.toLowerCase().replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() + '|' + unit.toLowerCase();
+    var prev = index[key];
+    if(prev){
+      var a = parseAmountNum(prev.amount), b = parseAmountNum(amount);
+      if((a !== null && b !== null) || (!prev.amount && !amount)){
+        if(a !== null && b !== null) prev.amount = formatAmountNum(a + b);
+        merged.push(name + (prev.amount ? ' \u2192 ' + [prev.amount, prev.unit].filter(Boolean).join(' ') : ''));
+        return;
+      }
+    }
+    var item = { name: name, amount: amount, unit: unit };
+    index[key] = item; out.push(item);
+  });
+  if(merged.length) changes.push('Merged duplicate ingredients: ' + merged.join('; '));
+  if(unitFixes) changes.push('Standardised units on ' + unitFixes + ' ingredient' + (unitFixes === 1 ? '' : 's') + ' (e.g. tablespoons \u2192 tbsp)');
+  if(nameFixes) changes.push('Fixed capitals on ' + nameFixes + ' ingredient' + (nameFixes === 1 ? '' : 's'));
+  if(dropped) changes.push('Removed ' + dropped + ' empty ingredient row' + (dropped === 1 ? '' : 's'));
+  /* same ingredient, different units: flag rather than guess */
+  var byName = {};
+  out.forEach(function(i){ var k = i.name.toLowerCase().replace(/\([^)]*\)/g, '').trim(); (byName[k] = byName[k] || []).push(i); });
+  Object.keys(byName).forEach(function(k){ if(byName[k].length > 1) changes.push('\u201c' + k + '\u201d is listed more than once with different units \u2014 worth a look'); });
+
+  /* steps */
+  var numStripped = 0, punct = 0, caps = 0, dupes = 0, joined = 0, split = 0;
+  var steps = [], seen = {};
+  (rec.steps || []).forEach(function(raw){
+    var st = tidyText(raw);
+    var st2 = st.replace(/^(?:step\s*)?\d+\s*[.):\-]\s+/i, '').replace(/^[\u2022*\-]\s+/, '');
+    if(st2 !== st){ numStripped++; st = st2; }
+    if(!st) return;
+    if(/^[a-z]/.test(st)){ st = st.charAt(0).toUpperCase() + st.slice(1); caps++; }
+    if(/[A-Za-z0-9)\u00bd]$/.test(st)){ st += '.'; punct++; }
+    var key = st.toLowerCase();
+    if(seen[key]){ dupes++; return; }
+    seen[key] = true;
+    steps.push(st);
+  });
+  var combined = [];
+  steps.forEach(function(st, i){
+    if(combined.length && st.length < 14 && !/\d/.test(st)){ combined[combined.length - 1] += ' ' + st; joined++; }
+    else combined.push(st);
+  });
+  var finalSteps = [];
+  combined.forEach(function(st){
+    var sentences = splitSentences(st);
+    if(st.length > 320 && sentences.length >= 2){
+      var chunk = '';
+      sentences.forEach(function(sn){
+        if(chunk && (chunk + ' ' + sn).length > 240){ finalSteps.push(chunk); chunk = sn; }
+        else chunk = chunk ? chunk + ' ' + sn : sn;
+      });
+      if(chunk) finalSteps.push(chunk);
+      split++;
+    } else finalSteps.push(st);
+  });
+  if(numStripped) changes.push('Removed step numbering from ' + numStripped + ' step' + (numStripped === 1 ? '' : 's'));
+  if(dupes) changes.push('Removed ' + dupes + ' repeated step' + (dupes === 1 ? '' : 's'));
+  if(joined) changes.push('Joined ' + joined + ' very short step' + (joined === 1 ? '' : 's') + ' onto the one before');
+  if(split) changes.push('Split ' + split + ' very long step' + (split === 1 ? '' : 's') + ' into easier chunks');
+  if(punct || caps) changes.push('Tidied punctuation and capitals in the method');
+
+  var tags = (rec.tags || []).filter(function(t, i, a){ return a.indexOf(t) === i; });
+  return { title: title, ingredients: out, steps: finalSteps, tags: tags, changes: changes };
+}
+
+function generateTidyAI(rec){
+  var ing = (rec.ingredients||[]).map(function(i){ return [i.amount, i.unit, i.name].filter(Boolean).join(' '); }).join("\n");
+  var prompt = "Tidy up and consolidate this recipe.\n" +
+    "- Fix spelling and typos; make wording consistent and clear.\n" +
+    "- Use metric-style abbreviations for units (g, kg, ml, l, tbsp, tsp).\n" +
+    "- Merge duplicate ingredients (add the amounts if the units match).\n" +
+    "- Merge fragmentary steps and split any overlong step; remove numbering and filler; keep every timing and temperature.\n" +
+    "- Do NOT invent ingredients, quantities or steps, and do not change the dish.\n\n" +
+    "Title: " + rec.title + "\nIngredients:\n" + ing + "\nSteps:\n" + stepsPromptList(rec) + "\n\n" +
+    "Respond with ONLY valid JSON, no markdown fences, no preamble: " +
+    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."]}';
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
+    var p = parseJsonLoose(text);
+    var ings = ((p && p.ingredients) || []).map(toIngredientObj).filter(Boolean);
+    var steps = toStepStrings(p && p.steps);
+    if(!ings.length && !steps.length) throw new Error("The tidy-up came back empty \u2014 please try again.");
+    return { title: (p.title || rec.title || "").toString(), ingredients: ings, steps: steps, tags: rec.tags || [] };
   });
 }
 
@@ -1397,9 +1634,54 @@ function renderApp(){
   if(ui.showAdd){
     html += renderAddModal();
   }
+  if(ui.tidy){
+    html += renderTidyModal();
+  }
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
+  return html;
+}
+
+function renderTidyModal(){
+  var t = ui.tidy;
+  var r = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
+  if(!r){ ui.tidy = null; return ''; }
+  var a = t.after;
+  var html = '<div class="overlay" id="tidy-overlay"><div class="modal">';
+  html += '<h3>Tidy up \u201c' + esc(r.title) + '\u201d</h3>';
+  if(t.loading){
+    html += '<div class="status-line"><span class="spinner"></span> Asking the AI to tidy it up\u2026</div></div></div>';
+    return html;
+  }
+  if(t.error) html += '<p class="error-line">' + esc(t.error) + '</p>';
+  if(t.source === "ai"){
+    html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">AI tidy-up: ' + r.ingredients.length + ' \u2192 ' + a.ingredients.length + ' ingredients, ' + r.steps.length + ' \u2192 ' + a.steps.length + ' steps. Have a read before you apply it \u2014 nothing changes until you do.</p>';
+  } else if(t.changes.length){
+    html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">Here\u2019s what a simple tidy-up would change:</p><ul class="tidy-list">';
+    t.changes.forEach(function(c){ html += '<li>' + esc(c) + '</li>'; });
+    html += '</ul>';
+  } else {
+    html += '<p style="font-size:13px;margin-top:0;">This recipe already looks tidy \u2014 no simple fixes needed.</p>';
+  }
+  var changed = t.source === "ai" || t.changes.some(function(c){ return !/worth a look$/.test(c); });
+  if(changed){
+    html += '<div class="card-block tidy-after"><h4>After</h4>';
+    if(a.title !== r.title) html += '<div style="font-family:var(--font-serif);font-size:18px;margin-bottom:6px;">' + esc(a.title) + '</div>';
+    html += '<strong>Ingredients</strong><ul>';
+    a.ingredients.forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
+    html += '</ul><strong>Method</strong><ol>';
+    a.steps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
+    html += '</ol></div>';
+  }
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  if(changed) html += '<button class="btn btn-primary" id="tidy-apply-btn">Apply changes</button>';
+  if(getActiveProvider().mode !== "none" && t.source !== "ai") html += '<button class="btn btn-accent" id="tidy-ai-btn">Tidy with AI instead</button>';
+  if(t.source === "ai") html += '<button class="btn btn-ghost" id="tidy-local-btn">Back to simple tidy</button>';
+  html += '<button class="btn btn-ghost" id="tidy-cancel-btn">' + (changed ? 'Cancel' : 'Close') + '</button>';
+  html += '</div>';
+  if(t.source !== "ai" && getActiveProvider().mode === "none") html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:10px;">A deeper AI rewrite (spelling, wording, clearer steps) is available once you add an API key in Settings.</p>';
+  html += '</div></div>';
   return html;
 }
 
@@ -1486,10 +1768,10 @@ function renderRecipeDetail(r){
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
   html += '<button class="btn btn-accent btn-sm" id="add-to-shopping">Add ingredients to shopping list</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
-  html += '<button class="btn btn-ghost btn-sm" id="toggle-layout">View: ' + (layout==="bullets" ? "bullet points" : "detailed steps") + '</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="toggle-layout">Layout: ' + (layout==="bullets" ? "bullet points" : "numbered steps") + '</button>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="toggle-detail-level" ' + (summarizing?"disabled":"") + '>' + (summarizing ? "Summarising..." : ("Method: " + (detailLevel==="quick" ? "quick" : "full"))) + '</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="tidy-open-btn">Tidy up recipe</button>';
   if(ui.confirmDeleteId === r.id){
     html += '<span style="font-size:12px;align-self:center;">Delete for good?</span>';
     html += '<button class="btn btn-danger btn-sm" id="confirm-delete">Yes, delete</button>';
@@ -1511,12 +1793,41 @@ function renderRecipeDetail(r){
   });
   html += '</div>';
 
-  var baseSteps = (detailLevel === "quick" && r.stepsQuick && r.stepsQuick.length) ? r.stepsQuick : (r.steps||[]);
+  var hasQuick = !!(r.stepsQuick && r.stepsQuick.length), hasGuided = !!(r.stepsGuided && r.stepsGuided.length);
+  var level = (detailLevel === "quick" && hasQuick) ? "quick" : ((detailLevel === "guided" && hasGuided) ? "guided" : "detailed");
+  var baseSteps = level === "quick" ? r.stepsQuick : (level === "guided" ? r.stepsGuided : (r.steps || []));
   var displaySteps = showQty ? annotateStepsWithQuantities(r, baseSteps) : baseSteps;
+  var hl = level !== "detailed";
 
-  html += '<div class="card-block"><h4>Method' + (detailLevel==="quick" && r.stepsQuick ? ' <span style="font-weight:400;text-transform:none;color:var(--ink-soft);font-family:var(--font-sans);font-size:11px;">(quick version)</span>' : '') + '</h4><ol class="steps-list' + (layout==="bullets"?" bullets":"") + '">';
-  displaySteps.forEach(function(s,i){
-    html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + esc(s) + '</span></li>';
+  var captions = {
+    detailed: "The method exactly as written \u2014 every step, nothing left out.",
+    quick: "Short on time: fewer, shorter steps with the timings and temperatures picked out.",
+    guided: "Taking it slow: each step expanded with what to look for and the usual slips. Written by AI \u2014 give it a sanity check."
+  };
+  html += '<div class="method-bar"><div class="mb-top"><span class="mb-label">Method</span><div class="seg" role="group" aria-label="Method detail">';
+  [["quick", "Quick"], ["detailed", "Full"], ["guided", "Guided"]].forEach(function(o){
+    var busy = summarizing && ui.detailLoadingLevel === o[0];
+    html += '<button data-level="' + o[0] + '" class="' + (level === o[0] ? "on" : "") + '" ' + (summarizing ? 'disabled' : '') + '>' + (busy ? 'Writing\u2026' : o[1]) + '</button>';
+  });
+  html += '</div>';
+  if(level !== "detailed" && getActiveProvider().mode !== "none" && !summarizing) html += '<button class="back-link" style="margin:0;" id="regen-level-btn">Regenerate</button>';
+  html += '</div>';
+  html += '<p class="mb-cap">' + captions[level] + '</p>';
+  if(level === "detailed" && detailLevel !== "detailed" && !summarizing) html += '<p class="mb-cap">Your default is ' + (detailLevel === "quick" ? "Quick" : "Guided") + ' \u2014 tap it above to create that version for this recipe.</p>';
+  if(summarizing) html += '<div class="status-line"><span class="spinner"></span> ' + (ui.detailLoadingLevel === "guided" ? "Writing the guided version\u2026" : "Condensing the method\u2026") + '</div>';
+  if(ui.detailNote) html += '<p class="mb-note">' + esc(ui.detailNote) + '</p>';
+  if(level === "quick"){
+    var seenT = {}, chips = [];
+    displaySteps.forEach(function(st){ (String(st).match(TIME_RE) || []).forEach(function(tm){ var k = tm.toLowerCase().replace(/\s+/g, ''); if(!seenT[k]){ seenT[k] = 1; chips.push(tm.trim()); } }); });
+    if(chips.length) html += '<div class="timing-strip"><span>Timings:</span>' + chips.slice(0, 10).map(function(c){ return '<span class="tm">' + esc(c) + '</span>'; }).join('') + '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="card-block"><h4>Method (' + displaySteps.length + ' step' + (displaySteps.length === 1 ? '' : 's') + ')</h4><ol class="steps-list' + (layout==="bullets"?" bullets":"") + '">';
+  displaySteps.forEach(function(st,i){
+    var body = esc(st);
+    if(hl) body = body.replace(TIME_RE, function(m){ return '<strong class="tm">' + m + '</strong>'; });
+    html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + body + '</span></li>';
   });
   html += '</ol></div>';
 
@@ -1575,7 +1886,7 @@ function renderSettings(){
   html += '<button class="chip' + (s.units==="imperial"?" active":"") + '" data-set-units="imperial">Imperial (oz, cups)</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Default method layout</label><div class="chip-row">';
-  html += '<button class="chip' + (s.layout==="detailed"?" active":"") + '" data-set-layout="detailed">Detailed steps</button>';
+  html += '<button class="chip' + (s.layout==="detailed"?" active":"") + '" data-set-layout="detailed">Numbered steps</button>';
   html += '<button class="chip' + (s.layout==="bullets"?" active":"") + '" data-set-layout="bullets">Simple bullet points</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Quantities in method</label><div class="chip-row">';
@@ -1583,10 +1894,11 @@ function renderSettings(){
   html += '<button class="chip' + (!s.showQuantities?" active":"") + '" data-set-qty="off">Off</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Default method detail</label><div class="chip-row">';
-  html += '<button class="chip' + (s.detailLevel==="detailed"?" active":"") + '" data-set-detail="detailed">Full detail</button>';
-  html += '<button class="chip' + (s.detailLevel==="quick"?" active":"") + '" data-set-detail="quick">Quick summary</button>';
+  html += '<button class="chip' + (s.detailLevel==="quick"?" active":"") + '" data-set-detail="quick">Quick \u2014 short on time</button>';
+  html += '<button class="chip' + (s.detailLevel==="detailed"?" active":"") + '" data-set-detail="detailed">Full \u2014 as written</button>';
+  html += '<button class="chip' + (s.detailLevel==="guided"?" active":"") + '" data-set-detail="guided">Guided \u2014 take it slow (AI)</button>';
   html += '</div></div>';
-  html += '<p style="font-size:12px;color:var(--ink-soft);">You can override any of these per-recipe from the recipe page. Quick summaries are generated the first time you switch a recipe to quick view, then remembered.</p></div>';
+  html += '<p style="font-size:12px;color:var(--ink-soft);">You can override any of these per-recipe from the recipe page. Quick and Guided versions are created the first time you switch a recipe to them, then remembered.</p></div>';
 
   html += renderSyncSettingsBlock();
   html += renderApiSettingsBlock();
@@ -1740,7 +2052,8 @@ function renderAddModal(){
     });
     html += '</div></div>';
 
-    html += '<button class="btn btn-primary" id="save-recipe-btn">' + (ui.editingRecipeId ? 'Save changes' : 'Save recipe') + '</button>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" id="save-recipe-btn">' + (ui.editingRecipeId ? 'Save changes' : 'Save recipe') + '</button>';
+    html += '<button class="btn btn-ghost" id="tidy-draft-btn" type="button">Tidy up</button></div>';
     html += '</div>';
   }
 
@@ -1804,13 +2117,53 @@ function attachHandlers(){
   if(ui.showAdd){
     attachModalHandlers();
   }
+  attachOverlayHandlers();
 }
 
-function attachRecipeListHandlers(){
-  var searchInput = document.getElementById('search-input');
-  if(searchInput){
-    searchInput.oninput = function(){ ui.search = searchInput.value; render(); };
-  }
+/* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
+function attachOverlayHandlers(){
+  var tidyOverlay = document.getElementById('tidy-overlay');
+  if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
+  var tidyCancel = document.getElementById('tidy-cancel-btn');
+  if(tidyCancel) tidyCancel.onclick = function(){ ui.tidy = null; render(); };
+  var tidyApply = document.getElementById('tidy-apply-btn');
+  if(tidyApply) tidyApply.onclick = function(){
+    var t = ui.tidy;
+    var rr = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
+    if(rr){
+      rr.title = t.after.title || rr.title;
+      rr.ingredients = t.after.ingredients;
+      rr.steps = t.after.steps;
+      if(t.after.tags) rr.tags = t.after.tags;
+      rr.stepsQuick = null; rr.stepsGuided = null;
+    }
+    ui.tidy = null; ui.detailLevelOverride = null;
+    saveState();
+  };
+  var tidyLocal = document.getElementById('tidy-local-btn');
+  if(tidyLocal) tidyLocal.onclick = function(){
+    var rr = state.recipes.filter(function(x){ return x.id === ui.tidy.recipeId; })[0];
+    var res = tidyRecipeLocal(rr);
+    ui.tidy = { recipeId: rr.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
+    render();
+  };
+  var tidyAi = document.getElementById('tidy-ai-btn');
+  if(tidyAi) tidyAi.onclick = function(){
+    var rid = ui.tidy.recipeId;
+    var rr = state.recipes.filter(function(x){ return x.id === rid; })[0];
+    ui.tidy = { recipeId: rid, source: "ai", after: null, changes: [], loading: true, error: "" };
+    render();
+    generateTidyAI(rr).then(function(after){
+      if(!ui.tidy || ui.tidy.recipeId !== rid) return;
+      ui.tidy = { recipeId: rid, source: "ai", after: after, changes: [], loading: false, error: "" };
+      render();
+    }).catch(function(err){
+      var res = tidyRecipeLocal(rr);
+      ui.tidy = { recipeId: rid, source: "local", after: res, changes: res.changes, loading: false, error: friendlyErrorMessage(err, "Couldn't reach the AI \u2014 showing the simple tidy-up instead.") };
+      render();
+    });
+  };
+
   var shareAccept = document.getElementById('share-accept-btn');
   if(shareAccept) shareAccept.onclick = function(){
     var g = ui.pendingShare.recipe;
@@ -1830,6 +2183,13 @@ function attachRecipeListHandlers(){
   };
   var shareDismiss = document.getElementById('share-dismiss-btn');
   if(shareDismiss) shareDismiss.onclick = function(){ clearPendingShare(); render(); };
+}
+
+function attachRecipeListHandlers(){
+  var searchInput = document.getElementById('search-input');
+  if(searchInput){
+    searchInput.oninput = function(){ ui.search = searchInput.value; render(); };
+  }
   var addBtn = document.getElementById('add-recipe-btn');
   if(addBtn) addBtn.onclick = function(){ ui.draft = freshDraft(); ui.editingRecipeId = null; ui.showAdd = true; render(); };
 
@@ -1848,6 +2208,7 @@ function attachRecipeListHandlers(){
       ui.detailLayoutOverride = null;
       ui.detailQuantitiesOverride = null;
       ui.detailLevelOverride = null;
+      ui.detailNote = "";
       ui.confirmDeleteId = null;
       render();
     };
@@ -1891,33 +2252,20 @@ function attachRecipeDetailHandlers(r){
     render();
   };
 
-  var toggleDetailBtn = document.getElementById('toggle-detail-level');
-  if(toggleDetailBtn) toggleDetailBtn.onclick = function(){
-    var current = ui.detailLevelOverride || state.settings.detailLevel;
-    var next = current === "quick" ? "detailed" : "quick";
-    if(next === "quick" && !(r.stepsQuick && r.stepsQuick.length)){
-      if(getActiveProvider().mode === "none"){
-        r.stepsQuick = localQuickSteps(r);
-        ui.detailLevelOverride = "quick";
-        saveState();
-        return;
-      }
-      ui.summarizeLoadingId = r.id;
-      render();
-      generateQuickSteps(r).then(function(quickSteps){
-        r.stepsQuick = quickSteps;
-        ui.summarizeLoadingId = null;
-        ui.detailLevelOverride = "quick";
-        saveState();
-      }).catch(function(err){
-        ui.summarizeLoadingId = null;
-        render();
-        alert(friendlyErrorMessage(err, "Couldn't generate a quick summary right now. Try again in a moment."));
-      });
-    } else {
-      ui.detailLevelOverride = next;
-      render();
-    }
+  document.querySelectorAll('[data-level]').forEach(function(b){
+    b.onclick = function(){ setMethodLevel(r, b.getAttribute('data-level')); };
+  });
+  var regenBtn = document.getElementById('regen-level-btn');
+  if(regenBtn) regenBtn.onclick = function(){
+    var lv = ui.detailLevelOverride || state.settings.detailLevel;
+    if(lv === "quick") r.stepsQuick = null; else if(lv === "guided") r.stepsGuided = null; else return;
+    setMethodLevel(r, lv);
+  };
+  var tidyOpen = document.getElementById('tidy-open-btn');
+  if(tidyOpen) tidyOpen.onclick = function(){
+    var res = tidyRecipeLocal(r);
+    ui.tidy = { recipeId: r.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
+    render();
   };
 
   var editBtn = document.getElementById('edit-recipe-btn');
@@ -2021,7 +2369,15 @@ function attachSettingsHandlers(){
   }
 
   document.querySelectorAll('[data-api-enabled]').forEach(function(btn){
-    btn.onclick = function(){ syncApiDraftFromDom(); ad.enabled = btn.getAttribute('data-api-enabled') === 'on'; render(); };
+    btn.onclick = function(){
+      syncApiDraftFromDom();
+      ad.enabled = btn.getAttribute('data-api-enabled') === 'on';
+      if(!ad.enabled){
+        /* "Off" takes effect straight away (the key stays saved so turning it back on is easy) */
+        state.settings.apiConfig = Object.assign({ provider: "anthropic", apiKey: "", model: "" }, state.settings.apiConfig, { enabled: false });
+        saveState();
+      } else render();
+    };
   });
   document.querySelectorAll('[data-api-provider]').forEach(function(btn){
     btn.onclick = function(){ syncApiDraftFromDom(); ad.provider = btn.getAttribute('data-api-provider'); render(); };
@@ -2174,6 +2530,18 @@ function attachModalHandlers(){
       };
     });
 
+    var tidyDraftBtn = document.getElementById('tidy-draft-btn');
+    if(tidyDraftBtn) tidyDraftBtn.onclick = function(){
+      syncDraftFromDom();
+      var res = tidyRecipeLocal({ title: d.title, ingredients: d.ingredients, steps: d.steps, tags: d.tags });
+      d.title = res.title;
+      d.ingredients = res.ingredients.length ? res.ingredients : [{name:"",amount:"",unit:""}];
+      d.steps = res.steps.length ? res.steps : [""];
+      d.tags = res.tags;
+      d.error = res.changes.length ? ("Tidied: " + res.changes.join(" \u00b7 ")) : "Already tidy \u2014 nothing to change.";
+      render();
+    };
+
     var saveBtn = document.getElementById('save-recipe-btn');
     if(saveBtn) saveBtn.onclick = function(){
       syncDraftFromDom();
@@ -2192,6 +2560,7 @@ function attachModalHandlers(){
           existing.tags = d.tags;
           existing.originalUrl = d.url || existing.originalUrl;
           existing.stepsQuick = null;
+          existing.stepsGuided = null;
         }
         ui.editingRecipeId = null;
         ui.showAdd = false;
