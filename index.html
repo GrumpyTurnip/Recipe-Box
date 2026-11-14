@@ -1681,7 +1681,7 @@ function attachSyncHandlers(){
   if(nowBtn) nowBtn.onclick = function(){ pushChanges(); };
   var retryBtn = document.getElementById('sync-retry-btn');
   if(retryBtn) retryBtn.onclick = function(){ initSync(); };
-  ['sync-signout-btn', 'header-signout-btn'].forEach(function(id){
+  ['sync-signout-btn'].forEach(function(id){
     var b = document.getElementById(id);
     if(b) b.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
   });
@@ -1743,9 +1743,6 @@ function renderApp(){
   html += '<div class="brand"><div class="mark">RB</div><div><h1>Recipe Box</h1><p>your recipes, your way</p></div></div>';
   html += '<div class="top-actions">';
   html += syncChipHtml();
-  html += '<button class="btn btn-ghost btn-sm" id="export-btn">Download my book</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="header-signout-btn">Sign out</button>';
-  html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Import .json<input type="file" accept=".json,application/json,text/plain" id="import-input" style="display:none;"></label>';
   html += '</div></header>';
 
   if(ui.saveError){
@@ -1921,7 +1918,7 @@ function renderRecipeList(){
 
 /* ---------- recipe detail ---------- */
 function renderRecipeDetail(r){
-  var layout = ui.detailLayoutOverride || r.layoutOverride || state.settings.layout;
+  var layout = state.settings.layout;
   var showQty = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
   var detailLevel = ui.detailLevelOverride || state.settings.detailLevel;
   var summarizing = ui.summarizeLoadingId === r.id;
@@ -1936,7 +1933,6 @@ function renderRecipeDetail(r){
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
   html += '<button class="btn btn-accent btn-sm" id="add-to-shopping">Add ingredients to shopping list</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
-  html += '<button class="btn btn-ghost btn-sm" id="toggle-layout">Layout: ' + (layout==="bullets" ? "bullet points" : "numbered steps") + '</button>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
   if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
@@ -2074,13 +2070,16 @@ function renderSettings(){
   html += '<button class="chip' + (s.detailLevel==="detailed"?" active":"") + '" data-set-detail="detailed">Full \u2014 as written</button>';
   html += '<button class="chip' + (s.detailLevel==="guided"?" active":"") + '" data-set-detail="guided">Guided \u2014 take it slow (AI)</button>';
   html += '</div></div>';
-  html += '<p style="font-size:12px;color:var(--ink-soft);">You can override any of these per-recipe from the recipe page. Quick and Guided versions are created the first time you switch a recipe to them, then remembered.</p></div>';
+  html += '<p style="font-size:12px;color:var(--ink-soft);">Quantities in method and Method detail can also be switched for a single recipe from its page. Quick and Guided versions are created the first time you switch a recipe to them, then remembered.</p></div>';
 
   html += renderSyncSettingsBlock();
   html += renderApiSettingsBlock();
 
-  html += '<div class="card-block"><h4>Your data</h4><p style="font-size:13px;">Everything is stored in your browser. Download a backup regularly so nothing gets lost.</p>';
-  html += '<button class="btn btn-primary" id="settings-export-btn">Download my recipe book</button></div>';
+  html += '<div class="card-block"><h4>Your recipe book</h4><p style="font-size:13px;margin-top:-4px;">Download your whole book (recipes, photos, pantry and shopping list) as a backup file for safe keeping, or bring one back in. Importing adds to what you have and skips anything already there. It also accepts a single recipe file or recipe data from other sites.</p>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<button class="btn btn-primary" id="settings-export-btn">Download my book</button>';
+  html += '<label class="btn btn-ghost" style="cursor:pointer;">Import backup<input type="file" accept=".json,application/json,text/plain" id="import-input" style="display:none;"></label>';
+  html += '</div></div>';
   return html;
 }
 
@@ -2261,14 +2260,10 @@ function syncDraftFromDom(){
 /* ---------- event wiring ---------- */
 function attachHandlers(){
   if(ui.loaded && !sync.user){ attachSyncHandlers(); return; }
-  var exportBtn = document.getElementById('export-btn');
-  if(exportBtn) exportBtn.onclick = exportBackup;
   var settingsExportBtn = document.getElementById('settings-export-btn');
   if(settingsExportBtn) settingsExportBtn.onclick = exportBackup;
   var importInput = document.getElementById('import-input');
   if(importInput) importInput.onchange = importBackup;
-  var headerOut = document.getElementById('header-signout-btn');
-  if(headerOut) headerOut.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
   var syncChipBtn = document.getElementById('sync-chip-btn');
   if(syncChipBtn) syncChipBtn.onclick = function(){ ui.tab = "settings"; ui.openRecipeId = null; render(); };
 
@@ -2399,7 +2394,6 @@ function attachRecipeListHandlers(){
   document.querySelectorAll('[data-open]').forEach(function(card){
     card.onclick = function(){
       ui.openRecipeId = card.getAttribute('data-open');
-      ui.detailLayoutOverride = null;
       ui.detailQuantitiesOverride = null;
       ui.detailLevelOverride = null;
       ui.detailNote = "";
@@ -2432,13 +2426,6 @@ function attachRecipeDetailHandlers(r){
       });
     };
   }
-
-  var toggleLayoutBtn = document.getElementById('toggle-layout');
-  if(toggleLayoutBtn) toggleLayoutBtn.onclick = function(){
-    var current = ui.detailLayoutOverride || r.layoutOverride || state.settings.layout;
-    ui.detailLayoutOverride = current === "bullets" ? "detailed" : "bullets";
-    render();
-  };
 
   var toggleQtyBtn = document.getElementById('toggle-quantities');
   if(toggleQtyBtn) toggleQtyBtn.onclick = function(){
