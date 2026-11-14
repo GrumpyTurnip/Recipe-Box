@@ -179,6 +179,22 @@
 
   .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
   .login-wrap{padding:16px 0;}
+  #print-sheet{display:none;}
+  @media print{
+    html,body{background:#fff !important;}
+    body > *:not(#print-sheet){display:none !important;}
+    #print-sheet{display:block !important;color:#000;font-family:Georgia,'Times New Roman',serif;font-size:12pt;line-height:1.45;}
+    #print-sheet h1{font-size:24pt;margin:0 0 4pt;line-height:1.15;}
+    #print-sheet h2{font-size:12pt;text-transform:uppercase;letter-spacing:1px;margin:16pt 0 6pt;border-bottom:1.5pt solid #000;padding-bottom:2pt;}
+    #print-sheet .ps-tags{font-size:10pt;color:#333;margin-bottom:8pt;}
+    #print-sheet .ps-img{width:100%;max-height:62mm;object-fit:cover;margin:6pt 0 4pt;}
+    #print-sheet ul,#print-sheet ol{margin:0;padding-left:18pt;}
+    #print-sheet li{margin:0 0 4pt;break-inside:avoid;}
+    #print-sheet .ps-amt{font-weight:bold;}
+    #print-sheet .ps-line{border-bottom:1pt dotted #444;height:9mm;}
+    #print-sheet .ps-lines h3{font-size:10pt;margin:10pt 0 0;color:#333;font-weight:normal;font-style:italic;}
+    @page{margin:15mm;}
+  }
   .menu-wrap{position:relative;display:inline-block;}
   .menu{position:absolute;left:0;top:calc(100% + 6px);min-width:250px;max-width:min(320px,calc(100vw - 28px));background:var(--card);border:1.5px solid var(--ink);border-radius:9px;box-shadow:var(--shadow);z-index:30;padding:5px;}
   .menu-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 11px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;border-radius:6px;}
@@ -288,7 +304,7 @@ var state = {
 var ui = {
   loaded: false,
   pendingShare: null, shareLinks: {},
-  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false,
+  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false, shortLinks: {}, shortLinkIssue: false, pendingShareId: null, printOpts: null,
   tab: "recipes",
   openRecipeId: null,
   showAdd: false,
@@ -1206,6 +1222,11 @@ var FIRESTORE_RULES = [
   "    match /users/{userId}/{document=**} {",
   "      allow read, write: if request.auth != null && request.auth.uid == userId;",
   "    }",
+  "    match /shares/{shareId} {",
+  "      allow get: if request.auth != null;",
+  "      allow create: if request.auth != null && request.resource.data.owner == request.auth.uid;",
+  "      allow update, delete: if request.auth != null && resource.data.owner == request.auth.uid;",
+  "    }",
   "  }",
   "}"
 ].join("\n");
@@ -1403,6 +1424,7 @@ function maybeSyncReady(){
   sync.ready = true;
   pushChanges();
   if(ui.pendingShare) render();
+  resolveShareId();
 }
 
 function applyRemoteRecipes(snap){
@@ -1589,6 +1611,7 @@ function renderLoginScreen(){
   var html = '<div class="login-wrap"><div class="login-card">';
   html += '<div class="brand" style="margin-bottom:18px;"><div class="mark">RB</div><div><h1>Recipe Box</h1><p>your recipes, your way</p></div></div>';
   html += '<h3 class="login-title">Sign in to sync across devices</h3>';
+  if(ui.pendingShareId && !ui.pendingShare) html += '<div class="notice" style="margin-bottom:10px;">A recipe was shared with you \u2014 sign in or create an account and you\u2019ll be offered it straight away.</div>';
   if(ui.pendingShare) html += '<div class="notice" style="margin-bottom:10px;">A recipe (\u201c' + esc(ui.pendingShare.recipe.title) + '\u201d) was shared with you \u2014 sign in or create an account and you\u2019ll be offered it straight away.</div>';
   if(sync.status === "loading" || sync.status === "off"){
     html += '<div class="status-line"><span class="spinner"></span> Checking sign-in…</div>';
@@ -1632,7 +1655,7 @@ function renderSyncSettingsBlock(){
   html += '<details class="setup" style="margin-top:12px;"><summary>One-time Firebase setup notes</summary>';
   html += '<ol><li>Authentication → Sign-in method: <strong>Email/Password</strong> switched on.</li>';
   html += '<li>Firestore Database created (the Storage tab isn’t used).</li>';
-  html += '<li>Firestore → Rules → publish exactly this:</li></ol>';
+  html += '<li>Firestore → Rules → publish exactly this (the <code>shares</code> part is what makes short share links work):</li></ol>';
   html += '<pre class="rules">' + esc(FIRESTORE_RULES) + '</pre></details>';
   html += '</div>';
   return html;
@@ -1769,6 +1792,9 @@ function renderApp(){
   if(ui.showAdd){
     html += renderAddModal();
   }
+  if(ui.printOpts){
+    html += renderPrintModal();
+  }
   if(ui.coverPick){
     html += renderCoverPickModal();
   }
@@ -1778,6 +1804,69 @@ function renderApp(){
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
+  return html;
+}
+
+function printSteps(r, withQty){
+  var detailLevel = ui.detailLevelOverride || state.settings.detailLevel;
+  var base = (detailLevel === "quick" && r.stepsQuick && r.stepsQuick.length) ? r.stepsQuick
+    : ((detailLevel === "guided" && r.stepsGuided && r.stepsGuided.length) ? r.stepsGuided : (r.steps || []));
+  return withQty ? annotateStepsWithQuantities(r, base) : base;
+}
+function buildPrintSheet(r, o){
+  var h = '<h1>' + esc(r.title) + '</h1>';
+  if((r.tags || []).length) h += '<div class="ps-tags">' + (r.tags || []).map(esc).join(' \u00b7 ') + '</div>';
+  if(o.picture && r.cover) h += '<img class="ps-img" alt="" src="' + esc(r.cover) + '">';
+  h += '<h2>Ingredients</h2><ul>';
+  (r.ingredients || []).forEach(function(i){
+    var q = [i.amount, i.unit].filter(Boolean).join(' ');
+    h += '<li>' + (q ? '<span class="ps-amt">' + esc(q) + '</span> ' : '') + esc(i.name) + '</li>';
+  });
+  h += '</ul>';
+  function lines(label, n){
+    var out = '<div class="ps-lines"><h3>' + esc(label) + '</h3>';
+    for(var k = 0; k < n; k++) out += '<div class="ps-line"></div>';
+    return out + '</div>';
+  }
+  if(o.notes) h += lines('My changes', 3);
+  var steps = printSteps(r, o.quantities);
+  var tag = state.settings.layout === "bullets" ? 'ul' : 'ol';
+  h += '<h2>Method</h2><' + tag + '>';
+  steps.forEach(function(st){ h += '<li>' + esc(st) + '</li>'; });
+  h += '</' + tag + '>';
+  if(o.notes) h += lines('Notes', 8);
+  return h;
+}
+function doPrint(r, o){
+  var sheet = document.getElementById('print-sheet');
+  if(!sheet){ sheet = document.createElement('div'); sheet.id = 'print-sheet'; document.body.appendChild(sheet); }
+  sheet.innerHTML = buildPrintSheet(r, o);
+  var imgs = Array.prototype.slice.call(sheet.querySelectorAll('img'));
+  var pending = imgs.filter(function(im){ return !im.complete; });
+  var fired = false;
+  function go(){ if(fired) return; fired = true; try{ window.print(); }catch(e){ alert("Couldn't open the print dialog from here \u2014 try your browser's own Print option."); } }
+  if(!pending.length) { go(); return; }
+  var left = pending.length;
+  pending.forEach(function(im){ im.onload = im.onerror = function(){ if(--left <= 0) go(); }; });
+  setTimeout(go, 2500);
+}
+function renderPrintModal(){
+  var o = ui.printOpts;
+  var r = state.recipes.filter(function(x){ return x.id === o.recipeId; })[0];
+  if(!r){ ui.printOpts = null; return ''; }
+  var html = '<div class="overlay" id="print-overlay"><div class="modal">';
+  html += '<h3>Print \u201c' + esc(r.title) + '\u201d</h3>';
+  html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">A clean black-and-white page \u2014 no buttons or menus. Choose what goes on it:</p>';
+  function row(label, key, onText, offText){
+    return '<div class="field-group"><label class="field">' + label + '</label><div class="chip-row">' +
+      '<button class="chip' + (o[key] ? ' active' : '') + '" data-print-opt="' + key + '" data-val="on">' + onText + '</button>' +
+      '<button class="chip' + (!o[key] ? ' active' : '') + '" data-print-opt="' + key + '" data-val="off">' + offText + '</button></div></div>';
+  }
+  html += row('Space for handwritten notes', 'notes', 'Dotted lines', 'None');
+  if(r.cover) html += row('Picture', 'picture', 'Include', 'Leave out');
+  html += row('Quantities in method', 'quantities', 'On', 'Off');
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" id="print-go-btn">Print</button><button class="btn btn-ghost" id="print-cancel-btn">Cancel</button></div>';
+  html += '</div></div>';
   return html;
 }
 
@@ -1952,8 +2041,10 @@ function renderRecipeDetail(r){
     html += '<button class="menu-item" role="menuitem" id="share-whatsapp-btn">Send on WhatsApp<small>A link they can tap to add it to their Recipe Box</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-link-btn">Copy share link<small>Paste anywhere \u2014 opens straight to import</small></button>';
     if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-native-btn">More apps\u2026<small>Messages, email, AirDrop and so on</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-print-btn">Print\u2026<small>A clean page with dotted lines for handwritten notes</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-copy-btn">Copy as text<small>Plain text for an email or note</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-download-btn">Download recipe file<small>The full recipe with photos, as a file</small></button>';
+    if(ui.shortLinkIssue) html += '<p style="font-size:11px;color:var(--ink-soft);margin:6px 11px 4px;line-height:1.4;">Links are long for now: short links need a one-off update to your Firestore rules (Settings \u2192 Account &amp; sync \u2192 setup notes).</p>';
     html += '</div>';
   }
   html += '</div>';
@@ -2293,6 +2384,19 @@ function attachHandlers(){
 
 /* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
 function attachOverlayHandlers(){
+  var printOverlay = document.getElementById('print-overlay');
+  if(printOverlay) printOverlay.onclick = function(e){ if(e.target === printOverlay){ ui.printOpts = null; render(); } };
+  var printCancel = document.getElementById('print-cancel-btn');
+  if(printCancel) printCancel.onclick = function(){ ui.printOpts = null; render(); };
+  document.querySelectorAll('[data-print-opt]').forEach(function(b){
+    b.onclick = function(){ ui.printOpts[b.getAttribute('data-print-opt')] = b.getAttribute('data-val') === 'on'; render(); };
+  });
+  var printGo = document.getElementById('print-go-btn');
+  if(printGo) printGo.onclick = function(){
+    var o = ui.printOpts;
+    var rr = state.recipes.filter(function(x){ return x.id === o.recipeId; })[0];
+    if(rr) doPrint(rr, { notes: o.notes, picture: o.picture, quantities: o.quantities });
+  };
   var coverOverlay = document.getElementById('cover-overlay');
   if(coverOverlay) coverOverlay.onclick = function(e){ if(e.target === coverOverlay && ui.coverPick && !ui.coverPick.saving){ ui.coverPick = null; render(); } };
   var coverCancel = document.getElementById('cover-cancel-btn');
@@ -2455,7 +2559,11 @@ function attachRecipeDetailHandlers(r){
 
   warmShareLink(r);
   var shareMenuBtn = document.getElementById('share-menu-btn');
-  if(shareMenuBtn) shareMenuBtn.onclick = function(e){ e.stopPropagation(); ui.shareMenu = !ui.shareMenu; render(); };
+  if(shareMenuBtn) shareMenuBtn.onclick = function(e){
+    e.stopPropagation(); ui.shareMenu = !ui.shareMenu;
+    if(ui.shareMenu) warmShortLink(r);   /* made while the menu is open so the tap can use it instantly */
+    render();
+  };
   function menuAction(id, fn){
     var el = document.getElementById(id);
     if(el) el.onclick = function(){ ui.shareMenu = false; fn(); render(); };
@@ -2463,6 +2571,7 @@ function attachRecipeDetailHandlers(r){
   menuAction('share-whatsapp-btn', function(){ shareOnWhatsApp(r); });
   menuAction('share-link-btn', function(){ copyShareLink(r); });
   menuAction('share-copy-btn', function(){ copyRecipeAsText(r); });
+  menuAction('share-print-btn', function(){ ui.printOpts = { recipeId: r.id, notes: true, picture: !!r.cover, quantities: ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : !!state.settings.showQuantities }; });
   menuAction('share-download-btn', function(){ exportSingleRecipe(r); });
   menuAction('share-native-btn', function(){
     if(shareNeedsHosting()) return;
@@ -3017,7 +3126,33 @@ function warmShareLink(r){
     if(link && ui.shareLinks[r.id] && ui.shareLinks[r.id].sig === sig && link.length < shareLinkPlain(r).length) ui.shareLinks[r.id].link = link;
   }).catch(function(){});
 }
+function randomShareId(){
+  var chars = 'abcdefghijkmnpqrstuvwxyz23456789', out = '', a = [];
+  try{ a = Array.prototype.slice.call(window.crypto.getRandomValues(new Uint8Array(10))); }catch(e){ for(var i = 0; i < 10; i++) a.push(Math.floor(Math.random() * 256)); }
+  a.forEach(function(x){ out += chars.charAt(x % chars.length); });
+  return out;
+}
+/* a short link stores the recipe in your own Firebase project and puts only a tiny id in the link */
+function warmShortLink(r){
+  if(!syncIsActive()) return;
+  var sig = shareCompact(r), c = ui.shortLinks[r.id];
+  if(c && c.sig === sig) return;
+  var id = randomShareId();
+  ui.shortLinks[r.id] = { sig: sig, link: null };
+  var writing;
+  try{ writing = sync.db.collection('shares').doc(id).set({ owner: sync.user.uid, createdAt: Date.now(), data: sig }); }
+  catch(e){ writing = Promise.reject(e); }
+  writing.then(function(){
+    if(ui.shortLinks[r.id] && ui.shortLinks[r.id].sig === sig) ui.shortLinks[r.id].link = shareBase() + '#s=' + id;
+  }).catch(function(){
+    delete ui.shortLinks[r.id];
+    ui.shortLinkIssue = true;
+    if(ui.shareMenu) render();
+  });
+}
 function getShareLink(r){
+  var sc = ui.shortLinks[r.id];
+  if(sc && sc.link && sc.sig === shareCompact(r)) return sc.link;
   var c = ui.shareLinks[r.id];
   if(c && c.sig === shareCompact(r) && c.link) return c.link;
   return shareLinkPlain(r);
@@ -3078,10 +3213,36 @@ function decodeShareToken(tok){
   return Promise.resolve(null);
 }
 function clearPendingShare(){
-  ui.pendingShare = null;
+  ui.pendingShare = null; ui.pendingShareId = null;
   try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){ try{ location.hash = ''; }catch(e2){} }
 }
+function failShareLink(msg){
+  alert(msg);
+  ui.pendingShareId = null;
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+  render();
+}
+function resolveShareId(){
+  var id = ui.pendingShareId;
+  if(!id || !syncIsActive() || !sync.ready || ui.pendingShare || ui.resolvingShare) return;
+  ui.resolvingShare = true;
+  sync.db.collection('shares').doc(id).get().then(function(snap){
+    ui.resolvingShare = false;
+    if(ui.pendingShareId !== id) return;
+    var g = null;
+    try{ if(snap.exists) g = recipeFromShareJson(JSON.parse(snap.data().data)); }catch(e){}
+    if(!g) return failShareLink("Couldn't open that shared recipe \u2014 the link may be old or have been removed. Ask for it to be sent again.");
+    ui.pendingShareId = null;
+    ui.pendingShare = { recipe: g };
+    render();
+  }).catch(function(){
+    ui.resolvingShare = false;
+    failShareLink("Couldn't open that shared recipe. Check your connection and try the link again \u2014 if it keeps failing, the sender may need to finish setting up short links (Firestore rules).");
+  });
+}
 function checkIncomingShare(){
+  var sm = String(location.hash || "").match(/^#s=([a-z0-9]{6,24})$/);
+  if(sm){ ui.pendingShareId = sm[1]; render(); resolveShareId(); return; }
   var m = String(location.hash || "").match(/^#share=([A-Za-z0-9_\-]+)$/);
   if(!m) return;
   decodeShareToken(m[1]).then(function(g){
