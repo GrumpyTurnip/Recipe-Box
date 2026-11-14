@@ -179,6 +179,27 @@
 
   .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
   .login-wrap{padding:16px 0;}
+  .menu-wrap{position:relative;display:inline-block;}
+  .menu{position:absolute;left:0;top:calc(100% + 6px);min-width:250px;max-width:min(320px,calc(100vw - 28px));background:var(--card);border:1.5px solid var(--ink);border-radius:9px;box-shadow:var(--shadow);z-index:30;padding:5px;}
+  .menu-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 11px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;border-radius:6px;}
+  .menu-item:hover,.menu-item:focus-visible{background:var(--paper);outline:none;}
+  .menu-item small{display:block;font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:1px;}
+  .cover-preview{width:100%;max-height:260px;object-fit:cover;border-radius:8px;display:block;margin:6px 0 12px;background:var(--paper);min-height:120px;}
+  .method-bar{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
+  .method-bar .mb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .method-bar .mb-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--basil-dark);font-weight:700;}
+  .seg{display:inline-flex;border:1.5px solid var(--ink);border-radius:7px;overflow:hidden;background:var(--card);}
+  .seg button{border:none;background:none;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);border-right:1px solid var(--line);}
+  .seg button:last-child{border-right:none;}
+  .seg button.on{background:var(--ink);color:var(--card);}
+  .seg button:disabled{opacity:.6;cursor:wait;}
+  .mb-cap{font-size:12px;color:var(--ink-soft);margin:8px 0 0;line-height:1.45;}
+  .mb-note{font-size:12px;color:var(--ink-soft);font-style:italic;margin:6px 0 0;}
+  .timing-strip{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 0;font-size:12px;color:var(--ink-soft);}
+  .tm{background:rgba(217,164,65,.30);border-radius:3px;padding:0 3px;font-weight:700;}
+  .tidy-list{margin:6px 0 12px;padding-left:18px;font-size:13px;line-height:1.5;}
+  .tidy-after{font-size:13px;line-height:1.5;}
+  .tidy-after ol,.tidy-after ul{margin:4px 0 10px;padding-left:20px;}
   textarea.paste-box{min-height:200px;line-height:1.45;}
 
   /* phones and the iPhone home-screen web app */
@@ -205,6 +226,7 @@
     .overlay{padding:0;align-items:stretch;}
     .modal{border-radius:0;min-height:100%;max-width:none;padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
     .add-mode-tabs{flex-wrap:wrap;}
+    .seg{width:100%;} .seg button{flex:1;padding:10px 6px;}
     .add-mode-tabs button{flex:1 1 auto;}
     .login-card{padding:20px;}
   }
@@ -266,6 +288,7 @@ var state = {
 var ui = {
   loaded: false,
   pendingShare: null, shareLinks: {},
+  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false,
   tab: "recipes",
   openRecipeId: null,
   showAdd: false,
@@ -603,12 +626,34 @@ function extractRecipeFromHtml(html){
   return { title: title, ingredients: ingredients, steps: steps, image: image };
 }
 
+var TIME_RE = /\b\d+(?:\s*[\u2013-]\s*\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)\b|\b\d{2,3}\s*\u00b0\s*[CF]?|\b\d{2,3}\s*(?:\u00b0\s*)?[CF]\b|\bgas mark\s*\d+\b|\b\d{2,3}\s*degrees\b/gi;
+var FILLER_START_RE = /^(?:this (?:will|is|helps|gives|allows)|you(?:'|\u2019)?(?:ll| will| want| should)|it(?:'|\u2019)?s (?:important|worth)|don(?:'|\u2019)?t worry|feel free|if you like|if you prefer|trust me|remember[,:]?)\b/i;
+
+function splitSentences(text){
+  var m = String(text).match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [String(text)];
+  return m.map(function(x){ return x.trim(); }).filter(Boolean);
+}
+function stepHasTimingOrTemp(sentence){ TIME_RE.lastIndex = 0; var r = TIME_RE.test(sentence); TIME_RE.lastIndex = 0; return r; }
+
+/* no-AI quick version: keep the action and anything with a time or temperature, drop padding, then merge short neighbours */
 function localQuickSteps(recipe){
-  return (recipe.steps||[]).map(function(step){
-    var idx = step.search(/[.!?]\s/);
-    if(idx > -1 && idx < step.length - 2) return step.slice(0, idx+1);
-    return step;
+  var steps = (recipe.steps || []).map(function(step){
+    var sentences = splitSentences(step);
+    if(sentences.length <= 1) return step;
+    var keep = [sentences[0]];
+    sentences.slice(1).forEach(function(sn){
+      if(FILLER_START_RE.test(sn)) return;
+      if(stepHasTimingOrTemp(sn)) keep.push(sn);
+    });
+    return keep.join(' ');
   });
+  var out = [];
+  steps.forEach(function(st){
+    var prev = out[out.length - 1];
+    if(prev && steps.length > 4 && (prev.length + st.length) <= 140 && out.length >= Math.ceil(steps.length / 2)) out[out.length - 1] = prev + ' ' + st;
+    else out.push(st);
+  });
+  return out;
 }
 
 function hasCustomApiConfigured(){
@@ -627,6 +672,7 @@ function getActiveProvider(){
 /* opts: {prompt: string, images: [{mediaType, base64}], useWebSearch: bool} */
 function runAI(opts){
   var prompt = opts.prompt;
+  var maxTokens = opts.maxTokens || 1500;
   var images = opts.images || [];
   var useWebSearch = !!opts.useWebSearch;
   var active = getActiveProvider();
@@ -642,7 +688,7 @@ function runAI(opts){
       return { type: "image", source: { type: "base64", media_type: img.mediaType, data: img.base64 } };
     }).concat([{ type: "text", text: prompt }]);
     var messages = [{ role: "user", content: images.length ? content : prompt }];
-    var body = { model: (active.mode === "custom" ? (active.model || "claude-sonnet-5") : "claude-sonnet-4-6"), max_tokens: 1500, messages: messages };
+    var body = { model: (active.mode === "custom" ? (active.model || "claude-sonnet-5") : "claude-sonnet-4-6"), max_tokens: maxTokens, messages: messages };
     if(useWebSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
 
     var headers = { "Content-Type": "application/json" };
@@ -673,7 +719,7 @@ function runAI(opts){
   }).concat([{ type: "text", text: prompt }]);
   var oMessages = [{ role: "user", content: images.length ? oContent : prompt }];
   var oModel = useWebSearch ? "gpt-4o-search-preview" : (active.model || "gpt-4o");
-  var oBody = { model: oModel, max_tokens: 1500, messages: oMessages };
+  var oBody = { model: oModel, max_tokens: maxTokens, messages: oMessages };
   if(useWebSearch) oBody.web_search_options = {};
   return fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -706,36 +752,288 @@ function escapeRegex(str){
 }
 
 /* Inserts (amount unit) after the first mention of each ingredient name across the steps */
+function setMethodLevel(r, level){
+  ui.detailNote = "";
+  if(level === "detailed"){ ui.detailLevelOverride = "detailed"; render(); return; }
+  var key = level === "quick" ? "stepsQuick" : "stepsGuided";
+  var ai = getActiveProvider().mode !== "none";
+  var upgradeLocal = ai && level === "quick" && r.quickSource === "local";   /* a no-AI quick version gets upgraded once AI is available */
+  if(r[key] && r[key].length && !upgradeLocal){ ui.detailLevelOverride = level; render(); return; }
+  if(level === "guided" && !ai){
+    ui.detailNote = "The guided version is written by AI. Add your API key in Settings (or open this inside Claude) to switch it on.";
+    render(); return;
+  }
+  if(!ai){
+    r.stepsQuick = localQuickSteps(r); r.quickSource = "local";
+    ui.detailLevelOverride = "quick";
+    ui.detailNote = "Shortened without AI (kept the first action of each step and every timing, and joined small steps). Add an API key in Settings for a smarter rewrite.";
+    saveState(); return;
+  }
+  ui.summarizeLoadingId = r.id; ui.detailLoadingLevel = level;
+  render();
+  var gen = level === "quick" ? generateQuickSteps(r) : generateGuidedSteps(r);
+  gen.then(function(steps){
+    r[key] = steps; if(level === "quick") r.quickSource = "ai";
+    ui.summarizeLoadingId = null; ui.detailLevelOverride = level;
+    saveState();
+  }).catch(function(err){
+    ui.summarizeLoadingId = null;
+    if(level === "quick"){
+      r.stepsQuick = localQuickSteps(r); r.quickSource = "local";
+      ui.detailLevelOverride = "quick";
+      ui.detailNote = "The AI wasn't reachable, so this is a simple shortening instead. Tap Regenerate to try the AI again.";
+      saveState();
+    } else {
+      ui.detailNote = friendlyErrorMessage(err, "Couldn't write the guided version right now. Try again in a moment.");
+      render();
+    }
+  });
+}
+
+/* the ways a step might refer to an ingredient: "small red onion, sliced" -> small red onion / red onion / onion */
+function ingredientCoreName(name){
+  return String(name || "").replace(/\([^)]*\)/g, ' ').split(/[,;]/)[0].replace(/\s+/g, ' ').trim()
+    .replace(/^(?:a|an|the|some|fresh|freshly|large|small|medium|big)\s+/i, '').trim();
+}
+function ingredientQtyText(ing){ return [ing.amount, ing.unit].map(function(x){ return String(x == null ? "" : x).trim(); }).filter(Boolean).join(' '); }
+function ingredientCandidates(ing, all){
+  var out = [], full = String(ing.name || "").trim(), core = ingredientCoreName(full);
+  [full, core].forEach(function(c){ if(c && out.indexOf(c) === -1) out.push(c); });
+  var words = core.split(' ');
+  for(var k = 1; k < words.length; k++){
+    var tail = words.slice(k).join(' ');
+    if(tail.length < 3) continue;
+    if(tail.indexOf(' ') === -1){
+      /* a lone word like "oil" or "onion" only counts if no other ingredient ends the same way */
+      var clash = (all || []).some(function(o){ return o !== ing && new RegExp('(?:^|\\s)' + escapeRegex(tail) + '(?:s|es)?$', 'i').test(ingredientCoreName(o.name)); });
+      if(clash) continue;
+    }
+    out.push(tail);
+  }
+  return out;
+}
+function nameRegex(name, tailAfter){
+  return new RegExp('\\b(' + escapeRegex(name) + '(?:s|es)?)\\b' + (tailAfter || ''), 'ig');
+}
 function annotateStepsWithQuantities(recipe, steps){
+  var ings = (recipe.ingredients || []).filter(function(i){ return i.name && String(i.name).trim() && ingredientQtyText(i); });
+  var cands = ings.map(function(ing){ return ingredientCandidates(ing, ings); });
   var seen = {};
   return steps.map(function(step){
     var result = step;
-    (recipe.ingredients||[]).forEach(function(ing){
-      if(!ing.name || !ing.name.trim()) return;
-      var key = ing.name.toLowerCase();
-      if(seen[key]) return;
-      var qty = (ing.amount + ' ' + ing.unit).trim();
-      if(!qty) return;
-      var re;
-      try{ re = new RegExp('\\b(' + escapeRegex(ing.name.trim()) + ')\\b', 'i'); }catch(e){ return; }
-      if(re.test(result)){
-        seen[key] = true;
-        result = result.replace(re, function(m){ return m + ' (' + qty + ')'; });
+    ings.forEach(function(ing, idx){
+      if(seen[idx]) return;
+      var qty = ingredientQtyText(ing);
+      for(var c = 0; c < cands[idx].length; c++){
+        var re = nameRegex(cands[idx][c], '(?!\\s*\\()');   /* skip if a bracket already follows */
+        var m = re.exec(result);
+        if(m){
+          seen[idx] = true;
+          result = result.slice(0, m.index + m[0].length) + ' (' + qty + ')' + result.slice(m.index + m[0].length);
+          return;
+        }
+        /* already written in by hand or by an earlier tool? count it as done so it isn't doubled up later */
+        if(nameRegex(cands[idx][c], '\\s*\\(').test(result)){ seen[idx] = true; return; }
       }
     });
     return result;
   });
 }
+/* remove quantities written into the method text itself, e.g. "olive oil (3 tbsp)" -> "olive oil" (the app adds them on demand) */
+function stripBakedQuantities(steps, ingredients){
+  var removed = 0;
+  var ings = (ingredients || []).filter(function(i){ return i.name && ingredientQtyText(i); });
+  var out = steps.map(function(step){
+    var res = step;
+    ings.forEach(function(ing){
+      var qtyRe = escapeRegex(String(ing.amount || "").trim()) + (ing.unit ? '\\s*' + escapeRegex(String(ing.unit).trim()) : '');
+      ingredientCandidates(ing, ings).forEach(function(c){
+        var re = new RegExp('(\\b' + escapeRegex(c) + '(?:s|es)?)\\s*\\(\\s*' + qtyRe + '\\s*\\)', 'ig');
+        res = res.replace(re, function(m, name){ removed++; return name; });
+      });
+    });
+    return res;
+  });
+  return { steps: out, removed: removed };
+}
 
+function stepsPromptList(recipe){
+  return (recipe.steps||[]).map(function(st,i){ return (i+1) + ". " + st; }).join("\n");
+}
 function generateQuickSteps(recipe){
-  var prompt = "Condense this recipe's method into a shorter, faster-to-scan version for someone short on time. " +
-    "Combine or drop minor detail but keep every essential action and any critical timing/temperature. Aim for roughly half as many steps where sensible.\n\n" +
-    "Title: " + recipe.title + "\n" +
-    "Current steps:\n" + (recipe.steps||[]).map(function(s,i){ return (i+1) + ". " + s; }).join("\n") + "\n\n" +
+  var prompt = "Rewrite this recipe's method as a QUICK version for a confident cook who is short on time.\n" +
+    "- Merge related steps and drop descriptive padding, but keep every essential action.\n" +
+    "- Keep ALL timings, temperatures and any cue that prevents a mistake.\n" +
+    "- Aim for about half the steps (never fewer than 3 unless the original has fewer), each under about 25 words, starting with a verb.\n" +
+    "- Do not invent anything that isn't in the original.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
+    "Title: " + recipe.title + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
-  return runAI({ prompt: prompt, images: [], useWebSearch: false }).then(function(text){
-    var parsed = parseJsonLoose(text);
-    return (parsed.steps && parsed.steps.length) ? parsed.steps : recipe.steps;
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 2000 }).then(function(text){
+    var steps = stripBakedQuantities(toStepStrings(parseJsonLoose(text).steps), recipe.ingredients).steps;
+    return steps.length ? steps : recipe.steps;
+  });
+}
+function generateGuidedSteps(recipe){
+  var ing = (recipe.ingredients||[]).map(function(i){ return [i.amount, i.unit, i.name].filter(Boolean).join(' '); }).join('; ');
+  var prompt = "Rewrite this recipe's method as a GUIDED version for someone who wants to take their time and get it right.\n" +
+    "- Keep the same steps in the same order (same number of steps), but expand each one a little: what it should look, smell or sound like when it's ready, roughly how long, and the most common slip to avoid.\n" +
+    "- Keep the original timings and temperatures; where you add an approximate timing, say \"about\".\n" +
+    "- Do not add or change ingredients or quantities, and do not change the dish.\n" +
+    "- Each step 1-3 sentences, plain and friendly.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
+    "Title: " + recipe.title + "\nIngredients: " + ing + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
+    "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
+    var steps = stripBakedQuantities(toStepStrings(parseJsonLoose(text).steps), recipe.ingredients).steps;
+    if(!steps.length) throw new Error("The guided version came back empty \u2014 please try again.");
+    return steps;
+  });
+}
+
+/* ---------- tidy up / consolidate ---------- */
+var UNIT_NORM = {tablespoon:'tbsp',tablespoons:'tbsp',tbsps:'tbsp',tbs:'tbsp',tbl:'tbsp',teaspoon:'tsp',teaspoons:'tsp',tsps:'tsp',
+  gram:'g',grams:'g',gm:'g',gms:'g',kilogram:'kg',kilograms:'kg',kilo:'kg',kilos:'kg',millilitre:'ml',millilitres:'ml',milliliter:'ml',milliliters:'ml',mls:'ml',
+  litre:'l',litres:'l',liter:'l',liters:'l',ounce:'oz',ounces:'oz',pound:'lb',pounds:'lb',lbs:'lb'};
+function normUnitStr(u){
+  var t = String(u || "").trim();
+  var k = t.toLowerCase().replace(/\.$/, '');
+  return UNIT_NORM[k] || t;
+}
+var FRAC_VAL = { '\u00bc': .25, '\u00bd': .5, '\u00be': .75, '\u2153': 1/3, '\u2154': 2/3, '\u215b': .125 };
+function parseAmountNum(a){
+  a = String(a == null ? "" : a).trim();
+  if(!a) return null;
+  var m;
+  if((m = a.match(/^(\d+)?\s*([\u00bc\u00bd\u00be\u2153\u2154\u215b])$/))) return (m[1] ? parseInt(m[1], 10) : 0) + FRAC_VAL[m[2]];
+  if((m = a.match(/^(\d+)\s+(\d+)\/(\d+)$/))) return parseInt(m[1], 10) + parseInt(m[2], 10) / parseInt(m[3], 10);
+  if((m = a.match(/^(\d+)\/(\d+)$/))) return parseInt(m[1], 10) / parseInt(m[2], 10);
+  if(/^\d+(\.\d+)?$/.test(a)) return parseFloat(a);
+  return null;
+}
+function formatAmountNum(n){
+  var whole = Math.floor(n + 1e-9), frac = n - whole;
+  var table = [[0, ''], [.25, '\u00bc'], [1/3, '\u2153'], [.5, '\u00bd'], [2/3, '\u2154'], [.75, '\u00be'], [1, '']];
+  for(var i = 0; i < table.length; i++){
+    if(Math.abs(frac - table[i][0]) < 0.02){
+      if(table[i][0] === 1) whole += 1;
+      var sym = table[i][1];
+      return (whole ? String(whole) : '') + sym || '0';
+    }
+  }
+  return String(Math.round(n * 100) / 100);
+}
+function tidyText(t){ return String(t == null ? "" : t).replace(/\s+/g, ' ').trim(); }
+
+function tidyRecipeLocal(rec){
+  var changes = [];
+  var title = tidyText(rec.title);
+  var t2 = title.replace(/\s*[|\u2013\u2014-]\s*[^|\u2013\u2014-]{0,40}$/, function(m){ return /recipe|kitchen|blog|cook|food|\.com/i.test(m) ? '' : m; });
+  t2 = t2.replace(/\s+recipe$/i, '');
+  if(t2 === t2.toUpperCase() && /[A-Z]{4,}/.test(t2)) t2 = t2.toLowerCase().replace(/(^|\s)([a-z])/g, function(m, a, b){ return a + b.toUpperCase(); });
+  if(t2 && t2 !== title){ changes.push('Title: \u201c' + title + '\u201d \u2192 \u201c' + t2 + '\u201d'); title = t2; }
+
+  /* ingredients */
+  var unitFixes = 0, nameFixes = 0, merged = [], dropped = 0;
+  var out = [], index = {};
+  (rec.ingredients || []).forEach(function(ing){
+    var name = tidyText(ing.name).replace(/[,;.]+$/, '').replace(/^of\s+/i, '');
+    var amount = tidyText(ing.amount), unitRaw = tidyText(ing.unit);
+    var unit = normUnitStr(unitRaw);
+    if(!name){ if(amount || unit) dropped++; return; }
+    if(unit !== unitRaw) unitFixes++;
+    var name2 = (name === name.toUpperCase() && name.length > 3) ? name.toLowerCase() : name;
+    if(name2 !== tidyText(ing.name)) nameFixes++;
+    name = name2;
+    var key = name.toLowerCase().replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() + '|' + unit.toLowerCase();
+    var prev = index[key];
+    if(prev){
+      var a = parseAmountNum(prev.amount), b = parseAmountNum(amount);
+      if((a !== null && b !== null) || (!prev.amount && !amount)){
+        if(a !== null && b !== null) prev.amount = formatAmountNum(a + b);
+        merged.push(name + (prev.amount ? ' \u2192 ' + [prev.amount, prev.unit].filter(Boolean).join(' ') : ''));
+        return;
+      }
+    }
+    var item = { name: name, amount: amount, unit: unit };
+    index[key] = item; out.push(item);
+  });
+  if(merged.length) changes.push('Merged duplicate ingredients: ' + merged.join('; '));
+  if(unitFixes) changes.push('Standardised units on ' + unitFixes + ' ingredient' + (unitFixes === 1 ? '' : 's') + ' (e.g. tablespoons \u2192 tbsp)');
+  if(nameFixes) changes.push('Fixed capitals on ' + nameFixes + ' ingredient' + (nameFixes === 1 ? '' : 's'));
+  if(dropped) changes.push('Removed ' + dropped + ' empty ingredient row' + (dropped === 1 ? '' : 's'));
+  /* same ingredient, different units: flag rather than guess */
+  var byName = {};
+  out.forEach(function(i){ var k = i.name.toLowerCase().replace(/\([^)]*\)/g, '').trim(); (byName[k] = byName[k] || []).push(i); });
+  Object.keys(byName).forEach(function(k){ if(byName[k].length > 1) changes.push('\u201c' + k + '\u201d is listed more than once with different units \u2014 worth a look'); });
+
+  /* steps */
+  var numStripped = 0, punct = 0, caps = 0, dupes = 0, joined = 0, split = 0;
+  var steps = [], seen = {};
+  (rec.steps || []).forEach(function(raw){
+    var st = tidyText(raw);
+    var st2 = st.replace(/^(?:step\s*)?\d+\s*[.):\-]\s+/i, '').replace(/^[\u2022*\-]\s+/, '');
+    if(st2 !== st){ numStripped++; st = st2; }
+    if(!st) return;
+    if(/^[a-z]/.test(st)){ st = st.charAt(0).toUpperCase() + st.slice(1); caps++; }
+    if(/[A-Za-z0-9)\u00bd]$/.test(st)){ st += '.'; punct++; }
+    var key = st.toLowerCase();
+    if(seen[key]){ dupes++; return; }
+    seen[key] = true;
+    steps.push(st);
+  });
+  var combined = [];
+  steps.forEach(function(st, i){
+    if(combined.length && st.length < 14 && !/\d/.test(st)){ combined[combined.length - 1] += ' ' + st; joined++; }
+    else combined.push(st);
+  });
+  var finalSteps = [];
+  combined.forEach(function(st){
+    var sentences = splitSentences(st);
+    if(st.length > 320 && sentences.length >= 2){
+      var chunk = '';
+      sentences.forEach(function(sn){
+        if(chunk && (chunk + ' ' + sn).length > 240){ finalSteps.push(chunk); chunk = sn; }
+        else chunk = chunk ? chunk + ' ' + sn : sn;
+      });
+      if(chunk) finalSteps.push(chunk);
+      split++;
+    } else finalSteps.push(st);
+  });
+  var sb = stripBakedQuantities(finalSteps, (rec.ingredients || []).concat((rec.ingredients || []).map(function(i){ return { name: i.name, amount: i.amount, unit: normUnitStr(i.unit) }; }), out));   /* original amounts too: a merged total no longer matches the old "(2 tbsp)" */
+  finalSteps = sb.steps;
+  if(sb.removed) changes.push('Took ' + sb.removed + ' quantit' + (sb.removed === 1 ? 'y' : 'ies') + ' out of the method text \u2014 they show automatically when \u201cQuantities in method\u201d is on');
+  if(numStripped) changes.push('Removed step numbering from ' + numStripped + ' step' + (numStripped === 1 ? '' : 's'));
+  if(dupes) changes.push('Removed ' + dupes + ' repeated step' + (dupes === 1 ? '' : 's'));
+  if(joined) changes.push('Joined ' + joined + ' very short step' + (joined === 1 ? '' : 's') + ' onto the one before');
+  if(split) changes.push('Split ' + split + ' very long step' + (split === 1 ? '' : 's') + ' into easier chunks');
+  if(punct || caps) changes.push('Tidied punctuation and capitals in the method');
+
+  var tags = (rec.tags || []).filter(function(t, i, a){ return a.indexOf(t) === i; });
+  return { title: title, ingredients: out, steps: finalSteps, tags: tags, changes: changes };
+}
+
+function generateTidyAI(rec){
+  var ing = (rec.ingredients||[]).map(function(i){ return [i.amount, i.unit, i.name].filter(Boolean).join(' '); }).join("\n");
+  var prompt = "Tidy up and consolidate this recipe.\n" +
+    "- Fix spelling and typos; make wording consistent and clear.\n" +
+    "- Use metric-style abbreviations for units (g, kg, ml, l, tbsp, tsp).\n" +
+    "- Merge duplicate ingredients (add the amounts if the units match).\n" +
+    "- Merge fragmentary steps and split any overlong step; remove numbering and filler; keep every timing and temperature.\n" +
+    "- Do NOT invent ingredients, quantities or steps, and do not change the dish.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
+    "Title: " + rec.title + "\nIngredients:\n" + ing + "\nSteps:\n" + stepsPromptList(rec) + "\n\n" +
+    "Respond with ONLY valid JSON, no markdown fences, no preamble: " +
+    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."]}';
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
+    var p = parseJsonLoose(text);
+    var ings = ((p && p.ingredients) || []).map(toIngredientObj).filter(Boolean);
+    var steps = stripBakedQuantities(toStepStrings(p && p.steps), ings.length ? ings : rec.ingredients).steps;
+    if(!ings.length && !steps.length) throw new Error("The tidy-up came back empty \u2014 please try again.");
+    return { title: (p.title || rec.title || "").toString(), ingredients: ings, steps: steps, tags: rec.tags || [] };
   });
 }
 
@@ -747,6 +1045,83 @@ function autoFindCoverPhoto(title){
     var parsed = parseJsonLoose(text);
     return parsed.imageUrl || null;
   });
+}
+
+var COVER_STOP = ["with","and","the","recipe","easy","quick","best","simple","homemade","style","from","your","for","that"];
+function coverWords(t){
+  return String(t || "").toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function(w){ return w.length >= 4 && COVER_STOP.indexOf(w) === -1; });
+}
+function fetchJsonCors(url){
+  return fetch(url, { mode: 'cors' }).then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+function absUrl(u, base){ try{ return new URL(u, base).href; }catch(e){ return null; } }
+
+/* 1. the recipe's own web page (when it came from a link) */
+function coverFromSource(rec){
+  var src = rec.originalUrl;
+  if(!src || !/^https?:/i.test(src) || /youtube\.com|youtu\.be/i.test(src)) return Promise.resolve([]);
+  return fetchRawHtml(src).then(function(html){
+    var out = [];
+    var rc = extractRecipeFromHtml(html);
+    if(rc && rc.image) out.push(absUrl(jsonLdImageToUrl(rc.image) || rc.image, src));
+    var m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if(m) out.push(absUrl(m[1].replace(/&amp;/g, '&'), src));
+    return out.filter(Boolean);
+  });
+}
+/* 2. TheMealDB: free recipe photos, matched on the dish name */
+function coverFromMealDb(title){
+  var words = coverWords(title);
+  if(!words.length) return Promise.resolve([]);
+  var queries = [String(title).trim()].concat(words.slice().sort(function(a, b){ return b.length - a.length; }).slice(0, 2));
+  var results = [];
+  function next(i){
+    if(i >= queries.length) return Promise.resolve();
+    return fetchJsonCors('https://www.themealdb.com/api/json/v1/1/search.php?s=' + encodeURIComponent(queries[i])).then(function(j){
+      (j && j.meals || []).forEach(function(m){
+        var hit = coverWords(m.strMeal).filter(function(w){ return words.indexOf(w) > -1; }).length;
+        var score = hit / words.length;
+        if(m.strMealThumb && (score >= 0.5 || (words.length === 1 && hit === 1))) results.push({ url: m.strMealThumb, score: score });
+      });
+    }).catch(function(){}).then(function(){ return results.length ? null : next(i + 1); });
+  }
+  return next(0).then(function(){
+    return results.sort(function(a, b){ return b.score - a.score; }).map(function(x){ return x.url; });
+  });
+}
+/* 3. Wikimedia Commons photo search */
+function coverFromCommons(title){
+  var words = coverWords(title);
+  if(!words.length) return Promise.resolve([]);
+  var url = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch=' +
+    encodeURIComponent(String(title).trim() + ' food') + '&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=800';
+  return fetchJsonCors(url).then(function(j){
+    var pages = (j && j.query && j.query.pages) ? Object.keys(j.query.pages).map(function(k){ return j.query.pages[k]; }) : [];
+    return pages.sort(function(a, b){ return (a.index || 0) - (b.index || 0); }).filter(function(p){
+      var ii = p.imageinfo && p.imageinfo[0];
+      if(!ii || !/^image\/(?:jpeg|png)$/.test(ii.mime) || (ii.width || 0) < 500) return false;
+      if(/logo|map|flag|icon|diagram|chart|poster|stamp|coat of arms/i.test(p.title)) return false;
+      return coverWords(p.title).some(function(w){ return words.indexOf(w) > -1; });
+    }).map(function(p){ return p.imageinfo[0].thumburl || p.imageinfo[0].url; });
+  });
+}
+/* all sources at once, best-first; the AI web search only steps in if nothing else turned up */
+function findCoverCandidates(rec){
+  var title = String(rec.title || "").trim();
+  function safe(p){ return p.catch(function(){ return []; }); }
+  return Promise.all([safe(coverFromSource(rec)), safe(coverFromMealDb(title)), safe(coverFromCommons(title))]).then(function(lists){
+    var found = [];
+    lists.forEach(function(l){ (l || []).forEach(function(u){ if(u && /^https?:/i.test(u) && found.indexOf(u) === -1) found.push(u); }); });
+    if(found.length || getActiveProvider().mode === "none") return found;
+    return autoFindCoverPhoto(title).then(function(u){ return u ? [u] : []; }).catch(function(){ return []; });
+  });
+}
+/* keep a copy inside the recipe where possible, so the picture can't vanish if the site changes */
+function toLocalCover(url){
+  return fetch(url, { mode: 'cors' }).then(function(r){ if(!r.ok) throw new Error('x'); return r.blob(); })
+    .then(function(b){ return resizeImage(b, 700, 0.72); })
+    .then(function(dataUrl){ return { cover: dataUrl, web: false }; })
+    .catch(function(){ return { cover: url, web: true }; });
 }
 
 function parseJsonLoose(text){
@@ -1306,7 +1681,7 @@ function attachSyncHandlers(){
   if(nowBtn) nowBtn.onclick = function(){ pushChanges(); };
   var retryBtn = document.getElementById('sync-retry-btn');
   if(retryBtn) retryBtn.onclick = function(){ initSync(); };
-  ['sync-signout-btn', 'header-signout-btn'].forEach(function(id){
+  ['sync-signout-btn'].forEach(function(id){
     var b = document.getElementById(id);
     if(b) b.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
   });
@@ -1368,9 +1743,6 @@ function renderApp(){
   html += '<div class="brand"><div class="mark">RB</div><div><h1>Recipe Box</h1><p>your recipes, your way</p></div></div>';
   html += '<div class="top-actions">';
   html += syncChipHtml();
-  html += '<button class="btn btn-ghost btn-sm" id="export-btn">Download my book</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="header-signout-btn">Sign out</button>';
-  html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Import .json<input type="file" accept=".json,application/json,text/plain" id="import-input" style="display:none;"></label>';
   html += '</div></header>';
 
   if(ui.saveError){
@@ -1397,9 +1769,84 @@ function renderApp(){
   if(ui.showAdd){
     html += renderAddModal();
   }
+  if(ui.coverPick){
+    html += renderCoverPickModal();
+  }
+  if(ui.tidy){
+    html += renderTidyModal();
+  }
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
+  return html;
+}
+
+function renderCoverPickModal(){
+  var c = ui.coverPick;
+  var r = state.recipes.filter(function(x){ return x.id === c.recipeId; })[0];
+  if(!r){ ui.coverPick = null; return ''; }
+  var html = '<div class="overlay" id="cover-overlay"><div class="modal">';
+  html += '<h3>Find a picture for \u201c' + esc(r.title) + '\u201d</h3>';
+  if(c.loading){
+    html += '<div class="status-line"><span class="spinner"></span> Looking for a suitable picture\u2026</div></div></div>';
+    return html;
+  }
+  if(!c.cands.length){
+    html += '<p style="font-size:13px;">I couldn\u2019t find a good match for that name. You can upload your own from <strong>Edit recipe</strong>, or rename the recipe more simply (for example \u201cTomato soup\u201d) and try again.</p>';
+    html += '<button class="btn btn-ghost" id="cover-cancel-btn">Close</button></div></div>';
+    return html;
+  }
+  html += '<p style="font-size:12px;color:var(--ink-soft);margin:0;">Picture ' + (c.idx + 1) + ' of ' + c.cands.length + '. It might not be the exact dish \u2014 only use it if it looks right.</p>';
+  html += '<img class="cover-preview" id="cover-preview-img" alt="Suggested picture" src="' + esc(c.cands[c.idx]) + '" onerror="this.outerHTML=\'<p class=&quot;error-line&quot;>That picture wouldn\\u2019t load \u2014 try another.</p>\'">';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<button class="btn btn-primary" id="cover-use-btn" ' + (c.saving ? 'disabled' : '') + '>' + (c.saving ? 'Saving\u2026' : 'Use this picture') + '</button>';
+  if(c.cands.length > 1) html += '<button class="btn btn-ghost" id="cover-next-btn" ' + (c.saving ? 'disabled' : '') + '>Try another</button>';
+  html += '<button class="btn btn-ghost" id="cover-cancel-btn">Cancel</button>';
+  html += '</div></div></div>';
+  return html;
+}
+
+function renderTidyModal(){
+  var t = ui.tidy;
+  var r = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
+  if(!r){ ui.tidy = null; return ''; }
+  var a = t.after;
+  var html = '<div class="overlay" id="tidy-overlay"><div class="modal">';
+  html += '<h3>Tidy up \u201c' + esc(r.title) + '\u201d</h3>';
+  if(t.loading){
+    html += '<div class="status-line"><span class="spinner"></span> Asking the AI to tidy it up\u2026</div></div></div>';
+    return html;
+  }
+  if(t.error) html += '<p class="error-line">' + esc(t.error) + '</p>';
+  if(t.source === "ai"){
+    html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">AI tidy-up: ' + r.ingredients.length + ' \u2192 ' + a.ingredients.length + ' ingredients, ' + r.steps.length + ' \u2192 ' + a.steps.length + ' steps. Have a read before you apply it \u2014 nothing changes until you do.</p>';
+  } else if(t.changes.length){
+    html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">Here\u2019s what a simple tidy-up would change:</p><ul class="tidy-list">';
+    t.changes.forEach(function(c){ html += '<li>' + esc(c) + '</li>'; });
+    html += '</ul>';
+  } else {
+    html += '<p style="font-size:13px;margin-top:0;">This recipe already looks tidy \u2014 no simple fixes needed.</p>';
+  }
+  var changed = t.source === "ai" || t.changes.some(function(c){ return !/worth a look$/.test(c); });
+  if(changed){
+    html += '<div class="card-block tidy-after"><h4>After</h4>';
+    if(a.title !== r.title) html += '<div style="font-family:var(--font-serif);font-size:18px;margin-bottom:6px;">' + esc(a.title) + '</div>';
+    html += '<strong>Ingredients</strong><ul>';
+    a.ingredients.forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
+    var showQ = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
+    var previewSteps = showQ ? annotateStepsWithQuantities({ ingredients: a.ingredients }, a.steps) : a.steps;
+    html += '</ul><strong>Method</strong> <span style="font-size:11px;color:var(--ink-soft);">(quantities in method: ' + (showQ ? 'on' : 'off') + ')</span><ol>';
+    previewSteps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
+    html += '</ol></div>';
+  }
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  if(changed) html += '<button class="btn btn-primary" id="tidy-apply-btn">Apply changes</button>';
+  if(getActiveProvider().mode !== "none" && t.source !== "ai") html += '<button class="btn btn-accent" id="tidy-ai-btn">Tidy with AI instead</button>';
+  if(t.source === "ai") html += '<button class="btn btn-ghost" id="tidy-local-btn">Back to simple tidy</button>';
+  html += '<button class="btn btn-ghost" id="tidy-cancel-btn">' + (changed ? 'Cancel' : 'Close') + '</button>';
+  html += '</div>';
+  if(t.source !== "ai" && getActiveProvider().mode === "none") html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:10px;">A deeper AI rewrite (spelling, wording, clearer steps) is available once you add an API key in Settings.</p>';
+  html += '</div></div>';
   return html;
 }
 
@@ -1471,7 +1918,7 @@ function renderRecipeList(){
 
 /* ---------- recipe detail ---------- */
 function renderRecipeDetail(r){
-  var layout = ui.detailLayoutOverride || r.layoutOverride || state.settings.layout;
+  var layout = state.settings.layout;
   var showQty = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
   var detailLevel = ui.detailLevelOverride || state.settings.detailLevel;
   var summarizing = ui.summarizeLoadingId === r.id;
@@ -1486,10 +1933,10 @@ function renderRecipeDetail(r){
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
   html += '<button class="btn btn-accent btn-sm" id="add-to-shopping">Add ingredients to shopping list</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
-  html += '<button class="btn btn-ghost btn-sm" id="toggle-layout">View: ' + (layout==="bullets" ? "bullet points" : "detailed steps") + '</button>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="toggle-detail-level" ' + (summarizing?"disabled":"") + '>' + (summarizing ? "Summarising..." : ("Method: " + (detailLevel==="quick" ? "quick" : "full"))) + '</button>';
+  if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="tidy-open-btn">Tidy up recipe</button>';
   if(ui.confirmDeleteId === r.id){
     html += '<span style="font-size:12px;align-self:center;">Delete for good?</span>';
     html += '<button class="btn btn-danger btn-sm" id="confirm-delete">Yes, delete</button>';
@@ -1499,10 +1946,17 @@ function renderRecipeDetail(r){
   }
   html += '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">';
-  html += '<button class="btn btn-accent btn-sm" id="share-download-btn">Share: download recipe</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="share-copy-btn">Share: copy as text</button>';
-  html += '<button class="btn btn-primary btn-sm" id="share-whatsapp-btn">Share on WhatsApp</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="share-link-btn">Copy share link</button>';
+  html += '<div class="menu-wrap"><button class="btn btn-primary btn-sm" id="share-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.shareMenu ? 'true' : 'false') + '">Share \u25be</button>';
+  if(ui.shareMenu){
+    html += '<div class="menu" role="menu">';
+    html += '<button class="menu-item" role="menuitem" id="share-whatsapp-btn">Send on WhatsApp<small>A link they can tap to add it to their Recipe Box</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-link-btn">Copy share link<small>Paste anywhere \u2014 opens straight to import</small></button>';
+    if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-native-btn">More apps\u2026<small>Messages, email, AirDrop and so on</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-copy-btn">Copy as text<small>Plain text for an email or note</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-download-btn">Download recipe file<small>The full recipe with photos, as a file</small></button>';
+    html += '</div>';
+  }
+  html += '</div>';
   html += '</div></div></div>';
 
   html += '<div class="card-block"><h4>Ingredients</h4>';
@@ -1511,12 +1965,41 @@ function renderRecipeDetail(r){
   });
   html += '</div>';
 
-  var baseSteps = (detailLevel === "quick" && r.stepsQuick && r.stepsQuick.length) ? r.stepsQuick : (r.steps||[]);
+  var hasQuick = !!(r.stepsQuick && r.stepsQuick.length), hasGuided = !!(r.stepsGuided && r.stepsGuided.length);
+  var level = (detailLevel === "quick" && hasQuick) ? "quick" : ((detailLevel === "guided" && hasGuided) ? "guided" : "detailed");
+  var baseSteps = level === "quick" ? r.stepsQuick : (level === "guided" ? r.stepsGuided : (r.steps || []));
   var displaySteps = showQty ? annotateStepsWithQuantities(r, baseSteps) : baseSteps;
+  var hl = level !== "detailed";
 
-  html += '<div class="card-block"><h4>Method' + (detailLevel==="quick" && r.stepsQuick ? ' <span style="font-weight:400;text-transform:none;color:var(--ink-soft);font-family:var(--font-sans);font-size:11px;">(quick version)</span>' : '') + '</h4><ol class="steps-list' + (layout==="bullets"?" bullets":"") + '">';
-  displaySteps.forEach(function(s,i){
-    html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + esc(s) + '</span></li>';
+  var captions = {
+    detailed: "The method exactly as written \u2014 every step, nothing left out.",
+    quick: "Short on time: fewer, shorter steps with the timings and temperatures picked out.",
+    guided: "Taking it slow: each step expanded with what to look for and the usual slips. Written by AI \u2014 give it a sanity check."
+  };
+  html += '<div class="method-bar"><div class="mb-top"><span class="mb-label">Method</span><div class="seg" role="group" aria-label="Method detail">';
+  [["quick", "Quick"], ["detailed", "Full"], ["guided", "Guided"]].forEach(function(o){
+    var busy = summarizing && ui.detailLoadingLevel === o[0];
+    html += '<button data-level="' + o[0] + '" class="' + (level === o[0] ? "on" : "") + '" ' + (summarizing ? 'disabled' : '') + '>' + (busy ? 'Writing\u2026' : o[1]) + '</button>';
+  });
+  html += '</div>';
+  if(level !== "detailed" && getActiveProvider().mode !== "none" && !summarizing) html += '<button class="back-link" style="margin:0;" id="regen-level-btn">Regenerate</button>';
+  html += '</div>';
+  html += '<p class="mb-cap">' + captions[level] + '</p>';
+  if(level === "detailed" && detailLevel !== "detailed" && !summarizing) html += '<p class="mb-cap">Your default is ' + (detailLevel === "quick" ? "Quick" : "Guided") + ' \u2014 tap it above to create that version for this recipe.</p>';
+  if(summarizing) html += '<div class="status-line"><span class="spinner"></span> ' + (ui.detailLoadingLevel === "guided" ? "Writing the guided version\u2026" : "Condensing the method\u2026") + '</div>';
+  if(ui.detailNote) html += '<p class="mb-note">' + esc(ui.detailNote) + '</p>';
+  if(level === "quick"){
+    var seenT = {}, chips = [];
+    displaySteps.forEach(function(st){ (String(st).match(TIME_RE) || []).forEach(function(tm){ var k = tm.toLowerCase().replace(/\s+/g, ''); if(!seenT[k]){ seenT[k] = 1; chips.push(tm.trim()); } }); });
+    if(chips.length) html += '<div class="timing-strip"><span>Timings:</span>' + chips.slice(0, 10).map(function(c){ return '<span class="tm">' + esc(c) + '</span>'; }).join('') + '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="card-block"><h4>Method (' + displaySteps.length + ' step' + (displaySteps.length === 1 ? '' : 's') + ')</h4><ol class="steps-list' + (layout==="bullets"?" bullets":"") + '">';
+  displaySteps.forEach(function(st,i){
+    var body = esc(st);
+    if(hl) body = body.replace(TIME_RE, function(m){ return '<strong class="tm">' + m + '</strong>'; });
+    html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + body + '</span></li>';
   });
   html += '</ol></div>';
 
@@ -1575,7 +2058,7 @@ function renderSettings(){
   html += '<button class="chip' + (s.units==="imperial"?" active":"") + '" data-set-units="imperial">Imperial (oz, cups)</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Default method layout</label><div class="chip-row">';
-  html += '<button class="chip' + (s.layout==="detailed"?" active":"") + '" data-set-layout="detailed">Detailed steps</button>';
+  html += '<button class="chip' + (s.layout==="detailed"?" active":"") + '" data-set-layout="detailed">Numbered steps</button>';
   html += '<button class="chip' + (s.layout==="bullets"?" active":"") + '" data-set-layout="bullets">Simple bullet points</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Quantities in method</label><div class="chip-row">';
@@ -1583,16 +2066,20 @@ function renderSettings(){
   html += '<button class="chip' + (!s.showQuantities?" active":"") + '" data-set-qty="off">Off</button>';
   html += '</div></div>';
   html += '<div class="field-group"><label class="field">Default method detail</label><div class="chip-row">';
-  html += '<button class="chip' + (s.detailLevel==="detailed"?" active":"") + '" data-set-detail="detailed">Full detail</button>';
-  html += '<button class="chip' + (s.detailLevel==="quick"?" active":"") + '" data-set-detail="quick">Quick summary</button>';
+  html += '<button class="chip' + (s.detailLevel==="quick"?" active":"") + '" data-set-detail="quick">Quick \u2014 short on time</button>';
+  html += '<button class="chip' + (s.detailLevel==="detailed"?" active":"") + '" data-set-detail="detailed">Full \u2014 as written</button>';
+  html += '<button class="chip' + (s.detailLevel==="guided"?" active":"") + '" data-set-detail="guided">Guided \u2014 take it slow (AI)</button>';
   html += '</div></div>';
-  html += '<p style="font-size:12px;color:var(--ink-soft);">You can override any of these per-recipe from the recipe page. Quick summaries are generated the first time you switch a recipe to quick view, then remembered.</p></div>';
+  html += '<p style="font-size:12px;color:var(--ink-soft);">Quantities in method and Method detail can also be switched for a single recipe from its page. Quick and Guided versions are created the first time you switch a recipe to them, then remembered.</p></div>';
 
   html += renderSyncSettingsBlock();
   html += renderApiSettingsBlock();
 
-  html += '<div class="card-block"><h4>Your data</h4><p style="font-size:13px;">Everything is stored in your browser. Download a backup regularly so nothing gets lost.</p>';
-  html += '<button class="btn btn-primary" id="settings-export-btn">Download my recipe book</button></div>';
+  html += '<div class="card-block"><h4>Your recipe book</h4><p style="font-size:13px;margin-top:-4px;">Download your whole book (recipes, photos, pantry and shopping list) as a backup file for safe keeping, or bring one back in. Importing adds to what you have and skips anything already there. It also accepts a single recipe file or recipe data from other sites.</p>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<button class="btn btn-primary" id="settings-export-btn">Download my book</button>';
+  html += '<label class="btn btn-ghost" style="cursor:pointer;">Import backup<input type="file" accept=".json,application/json,text/plain" id="import-input" style="display:none;"></label>';
+  html += '</div></div>';
   return html;
 }
 
@@ -1712,7 +2199,7 @@ function renderAddModal(){
     if(d.cover) html += '<img src="' + d.cover + '" style="width:80px;height:80px;object-fit:cover;border-radius:5px;margin-bottom:8px;display:block;">';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
     html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choose photo<input type="file" accept="image/*" id="cover-input" style="display:none;"></label>';
-    html += '<button class="btn btn-ghost btn-sm" id="auto-cover-btn" ' + (d.coverLoading?"disabled":"") + '>' + (d.coverLoading ? "Searching..." : "Find a photo for me") + '</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="auto-cover-btn" ' + (d.coverLoading?"disabled":"") + '>' + (d.coverLoading ? "Searching..." : ((d.coverCands && d.coverCands.length > 1 && d.coverCandsFor === d.title.trim()) ? "Try another photo" : "Find a photo for me")) + '</button>';
     html += '</div>';
     if(d.coverLoading) html += '<div class="status-line"><span class="spinner"></span> Looking for a cover photo...</div>';
     html += '</div>';
@@ -1740,7 +2227,8 @@ function renderAddModal(){
     });
     html += '</div></div>';
 
-    html += '<button class="btn btn-primary" id="save-recipe-btn">' + (ui.editingRecipeId ? 'Save changes' : 'Save recipe') + '</button>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" id="save-recipe-btn">' + (ui.editingRecipeId ? 'Save changes' : 'Save recipe') + '</button>';
+    html += '<button class="btn btn-ghost" id="tidy-draft-btn" type="button">Tidy up</button></div>';
     html += '</div>';
   }
 
@@ -1772,14 +2260,10 @@ function syncDraftFromDom(){
 /* ---------- event wiring ---------- */
 function attachHandlers(){
   if(ui.loaded && !sync.user){ attachSyncHandlers(); return; }
-  var exportBtn = document.getElementById('export-btn');
-  if(exportBtn) exportBtn.onclick = exportBackup;
   var settingsExportBtn = document.getElementById('settings-export-btn');
   if(settingsExportBtn) settingsExportBtn.onclick = exportBackup;
   var importInput = document.getElementById('import-input');
   if(importInput) importInput.onchange = importBackup;
-  var headerOut = document.getElementById('header-signout-btn');
-  if(headerOut) headerOut.onclick = function(){ if(sync.auth) sync.auth.signOut().catch(function(err){ setSyncError(err); }); };
   var syncChipBtn = document.getElementById('sync-chip-btn');
   if(syncChipBtn) syncChipBtn.onclick = function(){ ui.tab = "settings"; ui.openRecipeId = null; render(); };
 
@@ -1804,13 +2288,71 @@ function attachHandlers(){
   if(ui.showAdd){
     attachModalHandlers();
   }
+  attachOverlayHandlers();
 }
 
-function attachRecipeListHandlers(){
-  var searchInput = document.getElementById('search-input');
-  if(searchInput){
-    searchInput.oninput = function(){ ui.search = searchInput.value; render(); };
-  }
+/* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
+function attachOverlayHandlers(){
+  var coverOverlay = document.getElementById('cover-overlay');
+  if(coverOverlay) coverOverlay.onclick = function(e){ if(e.target === coverOverlay && ui.coverPick && !ui.coverPick.saving){ ui.coverPick = null; render(); } };
+  var coverCancel = document.getElementById('cover-cancel-btn');
+  if(coverCancel) coverCancel.onclick = function(){ ui.coverPick = null; render(); };
+  var coverNext = document.getElementById('cover-next-btn');
+  if(coverNext) coverNext.onclick = function(){ ui.coverPick.idx = (ui.coverPick.idx + 1) % ui.coverPick.cands.length; render(); };
+  var coverUse = document.getElementById('cover-use-btn');
+  if(coverUse) coverUse.onclick = function(){
+    var c = ui.coverPick;
+    var rr = state.recipes.filter(function(x){ return x.id === c.recipeId; })[0];
+    if(!rr){ ui.coverPick = null; render(); return; }
+    c.saving = true; render();
+    toLocalCover(c.cands[c.idx]).then(function(res){
+      rr.cover = res.cover; rr.coverIsWebLink = res.web;
+      ui.coverPick = null;
+      saveState();
+    });
+  };
+  var tidyOverlay = document.getElementById('tidy-overlay');
+  if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
+  var tidyCancel = document.getElementById('tidy-cancel-btn');
+  if(tidyCancel) tidyCancel.onclick = function(){ ui.tidy = null; render(); };
+  var tidyApply = document.getElementById('tidy-apply-btn');
+  if(tidyApply) tidyApply.onclick = function(){
+    var t = ui.tidy;
+    var rr = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
+    if(rr){
+      rr.title = t.after.title || rr.title;
+      rr.ingredients = t.after.ingredients;
+      rr.steps = t.after.steps;
+      if(t.after.tags) rr.tags = t.after.tags;
+      rr.stepsQuick = null; rr.stepsGuided = null;
+    }
+    ui.tidy = null; ui.detailLevelOverride = null;
+    saveState();
+  };
+  var tidyLocal = document.getElementById('tidy-local-btn');
+  if(tidyLocal) tidyLocal.onclick = function(){
+    var rr = state.recipes.filter(function(x){ return x.id === ui.tidy.recipeId; })[0];
+    var res = tidyRecipeLocal(rr);
+    ui.tidy = { recipeId: rr.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
+    render();
+  };
+  var tidyAi = document.getElementById('tidy-ai-btn');
+  if(tidyAi) tidyAi.onclick = function(){
+    var rid = ui.tidy.recipeId;
+    var rr = state.recipes.filter(function(x){ return x.id === rid; })[0];
+    ui.tidy = { recipeId: rid, source: "ai", after: null, changes: [], loading: true, error: "" };
+    render();
+    generateTidyAI(rr).then(function(after){
+      if(!ui.tidy || ui.tidy.recipeId !== rid) return;
+      ui.tidy = { recipeId: rid, source: "ai", after: after, changes: [], loading: false, error: "" };
+      render();
+    }).catch(function(err){
+      var res = tidyRecipeLocal(rr);
+      ui.tidy = { recipeId: rid, source: "local", after: res, changes: res.changes, loading: false, error: friendlyErrorMessage(err, "Couldn't reach the AI \u2014 showing the simple tidy-up instead.") };
+      render();
+    });
+  };
+
   var shareAccept = document.getElementById('share-accept-btn');
   if(shareAccept) shareAccept.onclick = function(){
     var g = ui.pendingShare.recipe;
@@ -1830,6 +2372,13 @@ function attachRecipeListHandlers(){
   };
   var shareDismiss = document.getElementById('share-dismiss-btn');
   if(shareDismiss) shareDismiss.onclick = function(){ clearPendingShare(); render(); };
+}
+
+function attachRecipeListHandlers(){
+  var searchInput = document.getElementById('search-input');
+  if(searchInput){
+    searchInput.oninput = function(){ ui.search = searchInput.value; render(); };
+  }
   var addBtn = document.getElementById('add-recipe-btn');
   if(addBtn) addBtn.onclick = function(){ ui.draft = freshDraft(); ui.editingRecipeId = null; ui.showAdd = true; render(); };
 
@@ -1845,9 +2394,10 @@ function attachRecipeListHandlers(){
   document.querySelectorAll('[data-open]').forEach(function(card){
     card.onclick = function(){
       ui.openRecipeId = card.getAttribute('data-open');
-      ui.detailLayoutOverride = null;
       ui.detailQuantitiesOverride = null;
       ui.detailLevelOverride = null;
+      ui.detailNote = "";
+      ui.shareMenu = false;
       ui.confirmDeleteId = null;
       render();
     };
@@ -1877,13 +2427,6 @@ function attachRecipeDetailHandlers(r){
     };
   }
 
-  var toggleLayoutBtn = document.getElementById('toggle-layout');
-  if(toggleLayoutBtn) toggleLayoutBtn.onclick = function(){
-    var current = ui.detailLayoutOverride || r.layoutOverride || state.settings.layout;
-    ui.detailLayoutOverride = current === "bullets" ? "detailed" : "bullets";
-    render();
-  };
-
   var toggleQtyBtn = document.getElementById('toggle-quantities');
   if(toggleQtyBtn) toggleQtyBtn.onclick = function(){
     var current = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
@@ -1891,49 +2434,50 @@ function attachRecipeDetailHandlers(r){
     render();
   };
 
-  var toggleDetailBtn = document.getElementById('toggle-detail-level');
-  if(toggleDetailBtn) toggleDetailBtn.onclick = function(){
-    var current = ui.detailLevelOverride || state.settings.detailLevel;
-    var next = current === "quick" ? "detailed" : "quick";
-    if(next === "quick" && !(r.stepsQuick && r.stepsQuick.length)){
-      if(getActiveProvider().mode === "none"){
-        r.stepsQuick = localQuickSteps(r);
-        ui.detailLevelOverride = "quick";
-        saveState();
-        return;
-      }
-      ui.summarizeLoadingId = r.id;
-      render();
-      generateQuickSteps(r).then(function(quickSteps){
-        r.stepsQuick = quickSteps;
-        ui.summarizeLoadingId = null;
-        ui.detailLevelOverride = "quick";
-        saveState();
-      }).catch(function(err){
-        ui.summarizeLoadingId = null;
-        render();
-        alert(friendlyErrorMessage(err, "Couldn't generate a quick summary right now. Try again in a moment."));
-      });
-    } else {
-      ui.detailLevelOverride = next;
-      render();
-    }
+  document.querySelectorAll('[data-level]').forEach(function(b){
+    b.onclick = function(){ setMethodLevel(r, b.getAttribute('data-level')); };
+  });
+  var regenBtn = document.getElementById('regen-level-btn');
+  if(regenBtn) regenBtn.onclick = function(){
+    var lv = ui.detailLevelOverride || state.settings.detailLevel;
+    if(lv === "quick") r.stepsQuick = null; else if(lv === "guided") r.stepsGuided = null; else return;
+    setMethodLevel(r, lv);
+  };
+  var tidyOpen = document.getElementById('tidy-open-btn');
+  if(tidyOpen) tidyOpen.onclick = function(){
+    var res = tidyRecipeLocal(r);
+    ui.tidy = { recipeId: r.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
+    render();
   };
 
   var editBtn = document.getElementById('edit-recipe-btn');
   if(editBtn) editBtn.onclick = function(){ openEditModal(r); };
 
-  var shareDownloadBtn = document.getElementById('share-download-btn');
-  if(shareDownloadBtn) shareDownloadBtn.onclick = function(){ exportSingleRecipe(r); };
-  var shareCopyBtn = document.getElementById('share-copy-btn');
-  if(shareCopyBtn) shareCopyBtn.onclick = function(){ copyRecipeAsText(r); };
-  var shareWaBtn = document.getElementById('share-whatsapp-btn');
-  if(shareWaBtn){
-    warmShareLink(r);
-    shareWaBtn.onclick = function(){ shareOnWhatsApp(r); };
+  warmShareLink(r);
+  var shareMenuBtn = document.getElementById('share-menu-btn');
+  if(shareMenuBtn) shareMenuBtn.onclick = function(e){ e.stopPropagation(); ui.shareMenu = !ui.shareMenu; render(); };
+  function menuAction(id, fn){
+    var el = document.getElementById(id);
+    if(el) el.onclick = function(){ ui.shareMenu = false; fn(); render(); };
   }
-  var shareLinkBtn = document.getElementById('share-link-btn');
-  if(shareLinkBtn) shareLinkBtn.onclick = function(){ copyShareLink(r); };
+  menuAction('share-whatsapp-btn', function(){ shareOnWhatsApp(r); });
+  menuAction('share-link-btn', function(){ copyShareLink(r); });
+  menuAction('share-copy-btn', function(){ copyRecipeAsText(r); });
+  menuAction('share-download-btn', function(){ exportSingleRecipe(r); });
+  menuAction('share-native-btn', function(){
+    if(shareNeedsHosting()) return;
+    navigator.share({ title: r.title, text: '\u201c' + r.title + '\u201d \u2014 open this link to add it to your Recipe Box:', url: getShareLink(r) }).catch(function(){});
+  });
+  var findCoverBtn = document.getElementById('find-cover-btn');
+  if(findCoverBtn) findCoverBtn.onclick = function(){
+    ui.coverPick = { recipeId: r.id, cands: [], idx: 0, loading: true, saving: false };
+    render();
+    findCoverCandidates(r).then(function(list){
+      if(!ui.coverPick || ui.coverPick.recipeId !== r.id) return;
+      ui.coverPick.cands = list; ui.coverPick.idx = 0; ui.coverPick.loading = false;
+      render();
+    });
+  };
 
   var askDeleteBtn = document.getElementById('ask-delete');
   if(askDeleteBtn) askDeleteBtn.onclick = function(){ ui.confirmDeleteId = r.id; render(); };
@@ -2021,7 +2565,15 @@ function attachSettingsHandlers(){
   }
 
   document.querySelectorAll('[data-api-enabled]').forEach(function(btn){
-    btn.onclick = function(){ syncApiDraftFromDom(); ad.enabled = btn.getAttribute('data-api-enabled') === 'on'; render(); };
+    btn.onclick = function(){
+      syncApiDraftFromDom();
+      ad.enabled = btn.getAttribute('data-api-enabled') === 'on';
+      if(!ad.enabled){
+        /* "Off" takes effect straight away (the key stays saved so turning it back on is easy) */
+        state.settings.apiConfig = Object.assign({ provider: "anthropic", apiKey: "", model: "" }, state.settings.apiConfig, { enabled: false });
+        saveState();
+      } else render();
+    };
   });
   document.querySelectorAll('[data-api-provider]').forEach(function(btn){
     btn.onclick = function(){ syncApiDraftFromDom(); ad.provider = btn.getAttribute('data-api-provider'); render(); };
@@ -2106,22 +2658,22 @@ function attachModalHandlers(){
     if(autoCoverBtn){
       autoCoverBtn.onclick = function(){
         syncDraftFromDom();
-        if(!d.title.trim()){ d.error = "Add a title first so I know what to search for."; render(); return; }
-        if(getActiveProvider().mode === "none"){
-          d.error = "Auto photo search needs API access (no local/no-AI version of this one) \u2014 upload your own photo instead, or import from a recipe link, which can often grab the site's own photo for free.";
-          render();
-          return;
+        var title = d.title.trim();
+        if(!title){ d.error = "Add a title first so I know what to search for."; render(); return; }
+        if(d.coverCands && d.coverCandsFor === title && d.coverCands.length){
+          d.coverIdx = (d.coverIdx + 1) % d.coverCands.length;
+          d.cover = d.coverCands[d.coverIdx]; d.coverIsWebLink = true; d.error = "";
+          render(); return;
         }
         d.coverLoading = true; d.error = "";
         render();
-        autoFindCoverPhoto(d.title.trim()).then(function(url){
+        findCoverCandidates({ title: title, originalUrl: d.url }).then(function(list){
           d.coverLoading = false;
-          if(url){ d.cover = url; d.coverIsWebLink = true; }
-          else { d.error = "Couldn't find a photo automatically \u2014 try uploading one instead."; }
-          render();
-        }).catch(function(err){
-          d.coverLoading = false;
-          d.error = friendlyErrorMessage(err, "Couldn't find a photo automatically \u2014 try uploading one instead.");
+          if(list.length){
+            d.coverCands = list; d.coverCandsFor = title; d.coverIdx = 0;
+            d.cover = list[0]; d.coverIsWebLink = true;
+            d.error = list.length > 1 ? "Not quite right? Tap \u201cTry another photo\u201d." : "";
+          } else d.error = "Couldn't find a photo automatically \u2014 try uploading one instead.";
           render();
         });
       };
@@ -2174,6 +2726,18 @@ function attachModalHandlers(){
       };
     });
 
+    var tidyDraftBtn = document.getElementById('tidy-draft-btn');
+    if(tidyDraftBtn) tidyDraftBtn.onclick = function(){
+      syncDraftFromDom();
+      var res = tidyRecipeLocal({ title: d.title, ingredients: d.ingredients, steps: d.steps, tags: d.tags });
+      d.title = res.title;
+      d.ingredients = res.ingredients.length ? res.ingredients : [{name:"",amount:"",unit:""}];
+      d.steps = res.steps.length ? res.steps : [""];
+      d.tags = res.tags;
+      d.error = res.changes.length ? ("Tidied: " + res.changes.join(" \u00b7 ")) : "Already tidy \u2014 nothing to change.";
+      render();
+    };
+
     var saveBtn = document.getElementById('save-recipe-btn');
     if(saveBtn) saveBtn.onclick = function(){
       syncDraftFromDom();
@@ -2192,6 +2756,7 @@ function attachModalHandlers(){
           existing.tags = d.tags;
           existing.originalUrl = d.url || existing.originalUrl;
           existing.stepsQuick = null;
+          existing.stepsGuided = null;
         }
         ui.editingRecipeId = null;
         ui.showAdd = false;
@@ -2529,6 +3094,12 @@ function checkIncomingShare(){
   });
 }
 window.addEventListener('hashchange', checkIncomingShare);
+document.addEventListener('click', function(e){
+  if(ui.shareMenu && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; render(); }
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && ui.shareMenu){ ui.shareMenu = false; render(); }
+});
 
 function exportSingleRecipe(r){
   var shareable = {
