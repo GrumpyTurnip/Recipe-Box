@@ -179,21 +179,29 @@
 
   .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
   .login-wrap{padding:16px 0;}
-  #print-sheet{display:none;}
+  .print-only{display:none;}
+  .step-row{display:flex;gap:6px;margin-bottom:6px;align-items:center;position:relative;background:var(--card);border-radius:6px;}
+  .step-row.dragging{z-index:5;box-shadow:var(--shadow);opacity:.96;}
+  .step-row.drop-above{box-shadow:0 -3px 0 var(--brick);}
+  .step-row.drop-below{box-shadow:0 3px 0 var(--brick);}
+  .reorder{display:flex;align-items:center;gap:3px;flex-shrink:0;}
+  .drag-h{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font-size:18px;line-height:1;color:var(--ink-soft);padding:6px 3px;}
+  .drag-h:active{cursor:grabbing;}
+  .mv-col{display:flex;flex-direction:column;gap:2px;}
+  .mv{background:var(--paper);border:1px solid var(--line);border-radius:4px;width:28px;height:22px;font-size:10px;line-height:1;cursor:pointer;padding:0;color:var(--ink);}
+  .mv:disabled{opacity:.3;cursor:default;}
+  .nl-line{border-bottom:1.2px dotted #555;height:9mm;}
+  .nl-label{font-size:11px;font-style:italic;color:var(--ink-soft);margin-top:10px;}
   @media print{
     html,body{background:#fff !important;}
-    body > *:not(#print-sheet){display:none !important;}
-    #print-sheet{display:block !important;color:#000;font-family:Georgia,'Times New Roman',serif;font-size:12pt;line-height:1.45;}
-    #print-sheet h1{font-size:24pt;margin:0 0 4pt;line-height:1.15;}
-    #print-sheet h2{font-size:12pt;text-transform:uppercase;letter-spacing:1px;margin:16pt 0 6pt;border-bottom:1.5pt solid #000;padding-bottom:2pt;}
-    #print-sheet .ps-tags{font-size:10pt;color:#333;margin-bottom:8pt;}
-    #print-sheet .ps-img{width:100%;max-height:62mm;object-fit:cover;margin:6pt 0 4pt;}
-    #print-sheet ul,#print-sheet ol{margin:0;padding-left:18pt;}
-    #print-sheet li{margin:0 0 4pt;break-inside:avoid;}
-    #print-sheet .ps-amt{font-weight:bold;}
-    #print-sheet .ps-line{border-bottom:1pt dotted #444;height:9mm;}
-    #print-sheet .ps-lines h3{font-size:10pt;margin:10pt 0 0;color:#333;font-weight:normal;font-style:italic;}
-    @page{margin:15mm;}
+    header.top,nav.tabs,.back-link,.btn,label.btn,.menu-wrap,.method-bar,.overlay,.banner,.status-line,.no-print{display:none !important;}
+    .print-only{display:block !important;}
+    .app{padding:0 !important;max-width:none !important;}
+    .card-block{box-shadow:none !important;break-inside:avoid;}
+    .detail-cover{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .detail-cover.no-cover{display:none !important;}
+    .tm{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{margin:12mm;}
   }
   .menu-wrap{position:relative;display:inline-block;}
   .menu{position:absolute;left:0;top:calc(100% + 6px);min-width:250px;max-width:min(320px,calc(100vw - 28px));background:var(--card);border:1.5px solid var(--ink);border-radius:9px;box-shadow:var(--shadow);z-index:30;padding:5px;}
@@ -239,7 +247,7 @@
     .detail-cover{width:100%;height:200px;}
     .detail-info{min-width:0;}
     .detail-info h2{font-size:25px;}
-    .overlay{padding:0;align-items:stretch;}
+    .overlay{padding:0;align-items:flex-start;}
     .modal{border-radius:0;min-height:100%;max-width:none;padding:18px 16px calc(24px + env(safe-area-inset-bottom));}
     .add-mode-tabs{flex-wrap:wrap;}
     .seg{width:100%;} .seg button{flex:1;padding:10px 6px;}
@@ -304,7 +312,7 @@ var state = {
 var ui = {
   loaded: false,
   pendingShare: null, shareLinks: {},
-  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false, shortLinks: {}, shortLinkIssue: false, pendingShareId: null, printOpts: null,
+  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false, shortLinks: {}, shortLinkIssue: false, pendingShareId: null,
   tab: "recipes",
   openRecipeId: null,
   showAdd: false,
@@ -1712,6 +1720,8 @@ function attachSyncHandlers(){
 
 /* ---------- focus-preserving re-render ---------- */
 function withFocusPreserved(fn){
+  var ovBefore = document.querySelector('.overlay');
+  var ovScroll = ovBefore ? ovBefore.scrollTop : 0, ovKey = ovBefore ? ovBefore.id : null;
   var active = document.activeElement;
   var id = active && active.id;
   var selStart, selEnd;
@@ -1719,6 +1729,10 @@ function withFocusPreserved(fn){
     try{ selStart = active.selectionStart; selEnd = active.selectionEnd; }catch(e){}
   }
   fn();
+  if(ovKey !== null){
+    var ovAfter = document.querySelector('.overlay');
+    if(ovAfter && ovAfter.id === ovKey) ovAfter.scrollTop = ovScroll;
+  }
   if(id){
     var el = document.getElementById(id);
     if(el){
@@ -1792,9 +1806,6 @@ function renderApp(){
   if(ui.showAdd){
     html += renderAddModal();
   }
-  if(ui.printOpts){
-    html += renderPrintModal();
-  }
   if(ui.coverPick){
     html += renderCoverPickModal();
   }
@@ -1804,69 +1815,6 @@ function renderApp(){
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
-  return html;
-}
-
-function printSteps(r, withQty){
-  var detailLevel = ui.detailLevelOverride || state.settings.detailLevel;
-  var base = (detailLevel === "quick" && r.stepsQuick && r.stepsQuick.length) ? r.stepsQuick
-    : ((detailLevel === "guided" && r.stepsGuided && r.stepsGuided.length) ? r.stepsGuided : (r.steps || []));
-  return withQty ? annotateStepsWithQuantities(r, base) : base;
-}
-function buildPrintSheet(r, o){
-  var h = '<h1>' + esc(r.title) + '</h1>';
-  if((r.tags || []).length) h += '<div class="ps-tags">' + (r.tags || []).map(esc).join(' \u00b7 ') + '</div>';
-  if(o.picture && r.cover) h += '<img class="ps-img" alt="" src="' + esc(r.cover) + '">';
-  h += '<h2>Ingredients</h2><ul>';
-  (r.ingredients || []).forEach(function(i){
-    var q = [i.amount, i.unit].filter(Boolean).join(' ');
-    h += '<li>' + (q ? '<span class="ps-amt">' + esc(q) + '</span> ' : '') + esc(i.name) + '</li>';
-  });
-  h += '</ul>';
-  function lines(label, n){
-    var out = '<div class="ps-lines"><h3>' + esc(label) + '</h3>';
-    for(var k = 0; k < n; k++) out += '<div class="ps-line"></div>';
-    return out + '</div>';
-  }
-  if(o.notes) h += lines('My changes', 3);
-  var steps = printSteps(r, o.quantities);
-  var tag = state.settings.layout === "bullets" ? 'ul' : 'ol';
-  h += '<h2>Method</h2><' + tag + '>';
-  steps.forEach(function(st){ h += '<li>' + esc(st) + '</li>'; });
-  h += '</' + tag + '>';
-  if(o.notes) h += lines('Notes', 8);
-  return h;
-}
-function doPrint(r, o){
-  var sheet = document.getElementById('print-sheet');
-  if(!sheet){ sheet = document.createElement('div'); sheet.id = 'print-sheet'; document.body.appendChild(sheet); }
-  sheet.innerHTML = buildPrintSheet(r, o);
-  var imgs = Array.prototype.slice.call(sheet.querySelectorAll('img'));
-  var pending = imgs.filter(function(im){ return !im.complete; });
-  var fired = false;
-  function go(){ if(fired) return; fired = true; try{ window.print(); }catch(e){ alert("Couldn't open the print dialog from here \u2014 try your browser's own Print option."); } }
-  if(!pending.length) { go(); return; }
-  var left = pending.length;
-  pending.forEach(function(im){ im.onload = im.onerror = function(){ if(--left <= 0) go(); }; });
-  setTimeout(go, 2500);
-}
-function renderPrintModal(){
-  var o = ui.printOpts;
-  var r = state.recipes.filter(function(x){ return x.id === o.recipeId; })[0];
-  if(!r){ ui.printOpts = null; return ''; }
-  var html = '<div class="overlay" id="print-overlay"><div class="modal">';
-  html += '<h3>Print \u201c' + esc(r.title) + '\u201d</h3>';
-  html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">A clean black-and-white page \u2014 no buttons or menus. Choose what goes on it:</p>';
-  function row(label, key, onText, offText){
-    return '<div class="field-group"><label class="field">' + label + '</label><div class="chip-row">' +
-      '<button class="chip' + (o[key] ? ' active' : '') + '" data-print-opt="' + key + '" data-val="on">' + onText + '</button>' +
-      '<button class="chip' + (!o[key] ? ' active' : '') + '" data-print-opt="' + key + '" data-val="off">' + offText + '</button></div></div>';
-  }
-  html += row('Space for handwritten notes', 'notes', 'Dotted lines', 'None');
-  if(r.cover) html += row('Picture', 'picture', 'Include', 'Leave out');
-  html += row('Quantities in method', 'quantities', 'On', 'Off');
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" id="print-go-btn">Print</button><button class="btn btn-ghost" id="print-cancel-btn">Cancel</button></div>';
-  html += '</div></div>';
   return html;
 }
 
@@ -2014,12 +1962,12 @@ function renderRecipeDetail(r){
 
   var html = '<button class="back-link" id="back-to-list">&larr; back to recipes</button>';
   html += '<div class="detail-header">';
-  html += '<div class="detail-cover"' + (r.cover ? ' style="background-image:url(\'' + r.cover + '\')"' : '') + '></div>';
+  html += '<div class="detail-cover' + (r.cover ? '' : ' no-cover') + '"' + (r.cover ? ' style="background-image:url(\'' + r.cover + '\')"' : '') + '></div>';
   html += '<div class="detail-info"><h2>' + esc(r.title) + '</h2>';
   html += '<div class="chip-row" style="margin-bottom:12px;">';
   (r.tags||[]).forEach(function(t){ html += '<span class="tagpill">' + esc(t) + '</span>'; });
   html += '</div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;">';
   html += '<button class="btn btn-accent btn-sm" id="add-to-shopping">Add ingredients to shopping list</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
@@ -2034,21 +1982,23 @@ function renderRecipeDetail(r){
     html += '<button class="btn btn-danger btn-sm" id="ask-delete">Delete recipe</button>';
   }
   html += '</div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">';
+  html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">';
   html += '<div class="menu-wrap"><button class="btn btn-primary btn-sm" id="share-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.shareMenu ? 'true' : 'false') + '">Share \u25be</button>';
   if(ui.shareMenu){
     html += '<div class="menu" role="menu">';
     html += '<button class="menu-item" role="menuitem" id="share-whatsapp-btn">Send on WhatsApp<small>A link they can tap to add it to their Recipe Box</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-link-btn">Copy share link<small>Paste anywhere \u2014 opens straight to import</small></button>';
     if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-native-btn">More apps\u2026<small>Messages, email, AirDrop and so on</small></button>';
-    html += '<button class="menu-item" role="menuitem" id="share-print-btn">Print\u2026<small>A clean page with dotted lines for handwritten notes</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-print-btn">Print\u2026<small>This page, with dotted lines for handwritten notes</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-copy-btn">Copy as text<small>Plain text for an email or note</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-download-btn">Download recipe file<small>The full recipe with photos, as a file</small></button>';
     if(ui.shortLinkIssue) html += '<p style="font-size:11px;color:var(--ink-soft);margin:6px 11px 4px;line-height:1.4;">Links are long for now: short links need a one-off update to your Firestore rules (Settings \u2192 Account &amp; sync \u2192 setup notes).</p>';
     html += '</div>';
   }
   html += '</div>';
-  html += '</div></div></div>';
+  html += '</div>';
+  html += '<div class="print-only"><div class="nl-label">My changes</div><div class="nl-line"></div><div class="nl-line"></div><div class="nl-line"></div></div>';
+  html += '</div></div>';
 
   html += '<div class="card-block"><h4>Ingredients</h4>';
   (r.ingredients||[]).forEach(function(ing){
@@ -2093,6 +2043,7 @@ function renderRecipeDetail(r){
     html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + body + '</span></li>';
   });
   html += '</ol></div>';
+  html += '<div class="print-only card-block"><h4>Notes</h4>' + new Array(7).join('<div class="nl-line"></div>') + '</div>';
 
   if(r.originalUrl){
     html += '<div class="card-block"><h4>Source</h4><p style="font-size:13px;margin:0;">Imported from: <a href="' + esc(r.originalUrl) + '" target="_blank" rel="noopener">' + esc(r.originalUrl) + '</a></p></div>';
@@ -2307,7 +2258,13 @@ function renderAddModal(){
 
     html += '<div class="field-group"><label class="field">Method</label>';
     d.steps.forEach(function(s, i){
-      html += '<div class="list-row"><textarea rows="2" id="step-' + i + '" data-step-idx="' + i + '" placeholder="Step ' + (i+1) + '">' + esc(s) + '</textarea>';
+      html += '<div class="step-row" data-step-row="' + i + '">';
+      if(d.steps.length > 1){
+        html += '<div class="reorder"><span class="drag-h" data-drag-step="' + i + '" title="Drag to reorder" aria-hidden="true">\u283f</span>';
+        html += '<div class="mv-col"><button type="button" class="mv" id="step-up-' + i + '" data-move-step="' + i + '" data-dir="-1" title="Move step ' + (i+1) + ' up" aria-label="Move step ' + (i+1) + ' up" ' + (i === 0 ? 'disabled' : '') + '>\u25b2</button>';
+        html += '<button type="button" class="mv" id="step-down-' + i + '" data-move-step="' + i + '" data-dir="1" title="Move step ' + (i+1) + ' down" aria-label="Move step ' + (i+1) + ' down" ' + (i === d.steps.length - 1 ? 'disabled' : '') + '>\u25bc</button></div></div>';
+      }
+      html += '<textarea rows="2" id="step-' + i + '" data-step-idx="' + i + '" placeholder="Step ' + (i+1) + '">' + esc(s) + '</textarea>';
       html += '<button class="small-x" data-remove-step="' + i + '">&times;</button></div>';
     });
     html += '<button class="btn btn-ghost btn-sm" id="add-step-row">+ step</button></div>';
@@ -2384,19 +2341,6 @@ function attachHandlers(){
 
 /* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
 function attachOverlayHandlers(){
-  var printOverlay = document.getElementById('print-overlay');
-  if(printOverlay) printOverlay.onclick = function(e){ if(e.target === printOverlay){ ui.printOpts = null; render(); } };
-  var printCancel = document.getElementById('print-cancel-btn');
-  if(printCancel) printCancel.onclick = function(){ ui.printOpts = null; render(); };
-  document.querySelectorAll('[data-print-opt]').forEach(function(b){
-    b.onclick = function(){ ui.printOpts[b.getAttribute('data-print-opt')] = b.getAttribute('data-val') === 'on'; render(); };
-  });
-  var printGo = document.getElementById('print-go-btn');
-  if(printGo) printGo.onclick = function(){
-    var o = ui.printOpts;
-    var rr = state.recipes.filter(function(x){ return x.id === o.recipeId; })[0];
-    if(rr) doPrint(rr, { notes: o.notes, picture: o.picture, quantities: o.quantities });
-  };
   var coverOverlay = document.getElementById('cover-overlay');
   if(coverOverlay) coverOverlay.onclick = function(e){ if(e.target === coverOverlay && ui.coverPick && !ui.coverPick.saving){ ui.coverPick = null; render(); } };
   var coverCancel = document.getElementById('cover-cancel-btn');
@@ -2571,7 +2515,7 @@ function attachRecipeDetailHandlers(r){
   menuAction('share-whatsapp-btn', function(){ shareOnWhatsApp(r); });
   menuAction('share-link-btn', function(){ copyShareLink(r); });
   menuAction('share-copy-btn', function(){ copyRecipeAsText(r); });
-  menuAction('share-print-btn', function(){ ui.printOpts = { recipeId: r.id, notes: true, picture: !!r.cover, quantities: ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : !!state.settings.showQuantities }; });
+  menuAction('share-print-btn', function(){ setTimeout(function(){ try{ window.print(); }catch(e){ alert("Couldn't open the print dialog from here \u2014 try your browser's own Print option."); } }, 60); });
   menuAction('share-download-btn', function(){ exportSingleRecipe(r); });
   menuAction('share-native-btn', function(){
     if(shareNeedsHosting()) return;
@@ -2822,6 +2766,71 @@ function attachModalHandlers(){
         render();
       };
     });
+    document.querySelectorAll('[data-move-step]').forEach(function(btn){
+      btn.onclick = function(){
+        syncDraftFromDom();
+        var from = parseInt(btn.getAttribute('data-move-step'), 10), dir = parseInt(btn.getAttribute('data-dir'), 10);
+        var to = from + dir;
+        if(to < 0 || to >= d.steps.length) return;
+        var item = d.steps.splice(from, 1)[0];
+        d.steps.splice(to, 0, item);
+        render();
+        /* keep the finger/cursor on the same button so it can be pressed again to keep moving */
+        var again = document.getElementById((dir < 0 ? 'step-up-' : 'step-down-') + to) || document.getElementById((dir < 0 ? 'step-down-' : 'step-up-') + to);
+        if(again) again.focus();
+      };
+    });
+    document.querySelectorAll('[data-drag-step]').forEach(function(handle){
+      handle.onpointerdown = function(e){
+        if(e.button !== undefined && e.button !== 0) return;
+        e.preventDefault();
+        syncDraftFromDom();
+        var from = parseInt(handle.getAttribute('data-drag-step'), 10);
+        var rows = Array.prototype.slice.call(document.querySelectorAll('[data-step-row]'));
+        var ov = document.querySelector('.overlay');
+        var scroll0 = ov ? ov.scrollTop : 0;
+        var tops = rows.map(function(r){ return r.getBoundingClientRect().top + scroll0; });
+        var heights = rows.map(function(r){ return r.getBoundingClientRect().height; });
+        var startY = e.clientY, target = from, dragRow = rows[from];
+        dragRow.classList.add('dragging');
+        try{ handle.setPointerCapture(e.pointerId); }catch(err){}
+        function clearMarks(){ rows.forEach(function(r){ r.classList.remove('drop-above', 'drop-below'); }); }
+        function move(ev){
+          if(ov){
+            if(ev.clientY < 70) ov.scrollTop -= 14;
+            else if(ev.clientY > window.innerHeight - 70) ov.scrollTop += 14;
+          }
+          var scrolled = ov ? ov.scrollTop - scroll0 : 0;
+          var dy = ev.clientY - startY + scrolled;
+          dragRow.style.transform = 'translateY(' + dy + 'px)';
+          var cy = tops[from] + heights[from] / 2 + dy;
+          var t = 0;
+          rows.forEach(function(r, i){ if(i !== from && (tops[i] + heights[i] / 2) < cy) t++; });
+          target = t;
+          clearMarks();
+          if(target < from) rows[target].classList.add('drop-above');
+          else if(target > from) rows[target].classList.add('drop-below');
+        }
+        function finish(commit){
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', up);
+          handle.removeEventListener('pointercancel', cancel);
+          clearMarks();
+          dragRow.classList.remove('dragging'); dragRow.style.transform = '';
+          if(commit && target !== from){
+            var item = d.steps.splice(from, 1)[0];
+            d.steps.splice(target, 0, item);
+            render();
+          }
+        }
+        function up(){ finish(true); }
+        function cancel(){ finish(false); }
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', up);
+        handle.addEventListener('pointercancel', cancel);
+      };
+    });
+
     var addStepBtn = document.getElementById('add-step-row');
     if(addStepBtn) addStepBtn.onclick = function(){ syncDraftFromDom(); d.steps.push(""); render(); };
 
