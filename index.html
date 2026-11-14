@@ -179,6 +179,12 @@
 
   .app,.modal,.card-block,.rcard,.detail-info{overflow-wrap:anywhere;}
   .login-wrap{padding:16px 0;}
+  .menu-wrap{position:relative;display:inline-block;}
+  .menu{position:absolute;left:0;top:calc(100% + 6px);min-width:250px;max-width:min(320px,calc(100vw - 28px));background:var(--card);border:1.5px solid var(--ink);border-radius:9px;box-shadow:var(--shadow);z-index:30;padding:5px;}
+  .menu-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 11px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;border-radius:6px;}
+  .menu-item:hover,.menu-item:focus-visible{background:var(--paper);outline:none;}
+  .menu-item small{display:block;font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:1px;}
+  .cover-preview{width:100%;max-height:260px;object-fit:cover;border-radius:8px;display:block;margin:6px 0 12px;background:var(--paper);min-height:120px;}
   .method-bar{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
   .method-bar .mb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .method-bar .mb-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--basil-dark);font-weight:700;}
@@ -282,7 +288,7 @@ var state = {
 var ui = {
   loaded: false,
   pendingShare: null, shareLinks: {},
-  tidy: null, detailNote: "", detailLoadingLevel: "",
+  tidy: null, detailNote: "", detailLoadingLevel: "", coverPick: null, shareMenu: false,
   tab: "recipes",
   openRecipeId: null,
   showAdd: false,
@@ -784,25 +790,71 @@ function setMethodLevel(r, level){
   });
 }
 
+/* the ways a step might refer to an ingredient: "small red onion, sliced" -> small red onion / red onion / onion */
+function ingredientCoreName(name){
+  return String(name || "").replace(/\([^)]*\)/g, ' ').split(/[,;]/)[0].replace(/\s+/g, ' ').trim()
+    .replace(/^(?:a|an|the|some|fresh|freshly|large|small|medium|big)\s+/i, '').trim();
+}
+function ingredientQtyText(ing){ return [ing.amount, ing.unit].map(function(x){ return String(x == null ? "" : x).trim(); }).filter(Boolean).join(' '); }
+function ingredientCandidates(ing, all){
+  var out = [], full = String(ing.name || "").trim(), core = ingredientCoreName(full);
+  [full, core].forEach(function(c){ if(c && out.indexOf(c) === -1) out.push(c); });
+  var words = core.split(' ');
+  for(var k = 1; k < words.length; k++){
+    var tail = words.slice(k).join(' ');
+    if(tail.length < 3) continue;
+    if(tail.indexOf(' ') === -1){
+      /* a lone word like "oil" or "onion" only counts if no other ingredient ends the same way */
+      var clash = (all || []).some(function(o){ return o !== ing && new RegExp('(?:^|\\s)' + escapeRegex(tail) + '(?:s|es)?$', 'i').test(ingredientCoreName(o.name)); });
+      if(clash) continue;
+    }
+    out.push(tail);
+  }
+  return out;
+}
+function nameRegex(name, tailAfter){
+  return new RegExp('\\b(' + escapeRegex(name) + '(?:s|es)?)\\b' + (tailAfter || ''), 'ig');
+}
 function annotateStepsWithQuantities(recipe, steps){
+  var ings = (recipe.ingredients || []).filter(function(i){ return i.name && String(i.name).trim() && ingredientQtyText(i); });
+  var cands = ings.map(function(ing){ return ingredientCandidates(ing, ings); });
   var seen = {};
   return steps.map(function(step){
     var result = step;
-    (recipe.ingredients||[]).forEach(function(ing){
-      if(!ing.name || !ing.name.trim()) return;
-      var key = ing.name.toLowerCase();
-      if(seen[key]) return;
-      var qty = (ing.amount + ' ' + ing.unit).trim();
-      if(!qty) return;
-      var re;
-      try{ re = new RegExp('\\b(' + escapeRegex(ing.name.trim()) + ')\\b', 'i'); }catch(e){ return; }
-      if(re.test(result)){
-        seen[key] = true;
-        result = result.replace(re, function(m){ return m + ' (' + qty + ')'; });
+    ings.forEach(function(ing, idx){
+      if(seen[idx]) return;
+      var qty = ingredientQtyText(ing);
+      for(var c = 0; c < cands[idx].length; c++){
+        var re = nameRegex(cands[idx][c], '(?!\\s*\\()');   /* skip if a bracket already follows */
+        var m = re.exec(result);
+        if(m){
+          seen[idx] = true;
+          result = result.slice(0, m.index + m[0].length) + ' (' + qty + ')' + result.slice(m.index + m[0].length);
+          return;
+        }
+        /* already written in by hand or by an earlier tool? count it as done so it isn't doubled up later */
+        if(nameRegex(cands[idx][c], '\\s*\\(').test(result)){ seen[idx] = true; return; }
       }
     });
     return result;
   });
+}
+/* remove quantities written into the method text itself, e.g. "olive oil (3 tbsp)" -> "olive oil" (the app adds them on demand) */
+function stripBakedQuantities(steps, ingredients){
+  var removed = 0;
+  var ings = (ingredients || []).filter(function(i){ return i.name && ingredientQtyText(i); });
+  var out = steps.map(function(step){
+    var res = step;
+    ings.forEach(function(ing){
+      var qtyRe = escapeRegex(String(ing.amount || "").trim()) + (ing.unit ? '\\s*' + escapeRegex(String(ing.unit).trim()) : '');
+      ingredientCandidates(ing, ings).forEach(function(c){
+        var re = new RegExp('(\\b' + escapeRegex(c) + '(?:s|es)?)\\s*\\(\\s*' + qtyRe + '\\s*\\)', 'ig');
+        res = res.replace(re, function(m, name){ removed++; return name; });
+      });
+    });
+    return res;
+  });
+  return { steps: out, removed: removed };
 }
 
 function stepsPromptList(recipe){
@@ -813,11 +865,13 @@ function generateQuickSteps(recipe){
     "- Merge related steps and drop descriptive padding, but keep every essential action.\n" +
     "- Keep ALL timings, temperatures and any cue that prevents a mistake.\n" +
     "- Aim for about half the steps (never fewer than 3 unless the original has fewer), each under about 25 words, starting with a verb.\n" +
-    "- Do not invent anything that isn't in the original.\n\n" +
+    "- Do not invent anything that isn't in the original.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
     "Title: " + recipe.title + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
   return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 2000 }).then(function(text){
-    var steps = toStepStrings(parseJsonLoose(text).steps);
+    var steps = stripBakedQuantities(toStepStrings(parseJsonLoose(text).steps), recipe.ingredients).steps;
     return steps.length ? steps : recipe.steps;
   });
 }
@@ -827,11 +881,13 @@ function generateGuidedSteps(recipe){
     "- Keep the same steps in the same order (same number of steps), but expand each one a little: what it should look, smell or sound like when it's ready, roughly how long, and the most common slip to avoid.\n" +
     "- Keep the original timings and temperatures; where you add an approximate timing, say \"about\".\n" +
     "- Do not add or change ingredients or quantities, and do not change the dish.\n" +
-    "- Each step 1-3 sentences, plain and friendly.\n\n" +
+    "- Each step 1-3 sentences, plain and friendly.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
     "Title: " + recipe.title + "\nIngredients: " + ing + "\nCurrent steps:\n" + stepsPromptList(recipe) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: {\"steps\": [\"...\", \"...\"]}";
   return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
-    var steps = toStepStrings(parseJsonLoose(text).steps);
+    var steps = stripBakedQuantities(toStepStrings(parseJsonLoose(text).steps), recipe.ingredients).steps;
     if(!steps.length) throw new Error("The guided version came back empty \u2014 please try again.");
     return steps;
   });
@@ -946,6 +1002,9 @@ function tidyRecipeLocal(rec){
       split++;
     } else finalSteps.push(st);
   });
+  var sb = stripBakedQuantities(finalSteps, (rec.ingredients || []).concat((rec.ingredients || []).map(function(i){ return { name: i.name, amount: i.amount, unit: normUnitStr(i.unit) }; }), out));   /* original amounts too: a merged total no longer matches the old "(2 tbsp)" */
+  finalSteps = sb.steps;
+  if(sb.removed) changes.push('Took ' + sb.removed + ' quantit' + (sb.removed === 1 ? 'y' : 'ies') + ' out of the method text \u2014 they show automatically when \u201cQuantities in method\u201d is on');
   if(numStripped) changes.push('Removed step numbering from ' + numStripped + ' step' + (numStripped === 1 ? '' : 's'));
   if(dupes) changes.push('Removed ' + dupes + ' repeated step' + (dupes === 1 ? '' : 's'));
   if(joined) changes.push('Joined ' + joined + ' very short step' + (joined === 1 ? '' : 's') + ' onto the one before');
@@ -963,14 +1022,16 @@ function generateTidyAI(rec){
     "- Use metric-style abbreviations for units (g, kg, ml, l, tbsp, tsp).\n" +
     "- Merge duplicate ingredients (add the amounts if the units match).\n" +
     "- Merge fragmentary steps and split any overlong step; remove numbering and filler; keep every timing and temperature.\n" +
-    "- Do NOT invent ingredients, quantities or steps, and do not change the dish.\n\n" +
+    "- Do NOT invent ingredients, quantities or steps, and do not change the dish.\n" +
+    "- Do not write ingredient quantities into the steps (no \"(2 tbsp)\" style brackets): the app adds them automatically when the reader switches that option on.\n" +
+    "\n" +
     "Title: " + rec.title + "\nIngredients:\n" + ing + "\nSteps:\n" + stepsPromptList(rec) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: " +
     '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."]}';
   return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
     var p = parseJsonLoose(text);
     var ings = ((p && p.ingredients) || []).map(toIngredientObj).filter(Boolean);
-    var steps = toStepStrings(p && p.steps);
+    var steps = stripBakedQuantities(toStepStrings(p && p.steps), ings.length ? ings : rec.ingredients).steps;
     if(!ings.length && !steps.length) throw new Error("The tidy-up came back empty \u2014 please try again.");
     return { title: (p.title || rec.title || "").toString(), ingredients: ings, steps: steps, tags: rec.tags || [] };
   });
@@ -984,6 +1045,83 @@ function autoFindCoverPhoto(title){
     var parsed = parseJsonLoose(text);
     return parsed.imageUrl || null;
   });
+}
+
+var COVER_STOP = ["with","and","the","recipe","easy","quick","best","simple","homemade","style","from","your","for","that"];
+function coverWords(t){
+  return String(t || "").toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function(w){ return w.length >= 4 && COVER_STOP.indexOf(w) === -1; });
+}
+function fetchJsonCors(url){
+  return fetch(url, { mode: 'cors' }).then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+}
+function absUrl(u, base){ try{ return new URL(u, base).href; }catch(e){ return null; } }
+
+/* 1. the recipe's own web page (when it came from a link) */
+function coverFromSource(rec){
+  var src = rec.originalUrl;
+  if(!src || !/^https?:/i.test(src) || /youtube\.com|youtu\.be/i.test(src)) return Promise.resolve([]);
+  return fetchRawHtml(src).then(function(html){
+    var out = [];
+    var rc = extractRecipeFromHtml(html);
+    if(rc && rc.image) out.push(absUrl(jsonLdImageToUrl(rc.image) || rc.image, src));
+    var m = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    if(m) out.push(absUrl(m[1].replace(/&amp;/g, '&'), src));
+    return out.filter(Boolean);
+  });
+}
+/* 2. TheMealDB: free recipe photos, matched on the dish name */
+function coverFromMealDb(title){
+  var words = coverWords(title);
+  if(!words.length) return Promise.resolve([]);
+  var queries = [String(title).trim()].concat(words.slice().sort(function(a, b){ return b.length - a.length; }).slice(0, 2));
+  var results = [];
+  function next(i){
+    if(i >= queries.length) return Promise.resolve();
+    return fetchJsonCors('https://www.themealdb.com/api/json/v1/1/search.php?s=' + encodeURIComponent(queries[i])).then(function(j){
+      (j && j.meals || []).forEach(function(m){
+        var hit = coverWords(m.strMeal).filter(function(w){ return words.indexOf(w) > -1; }).length;
+        var score = hit / words.length;
+        if(m.strMealThumb && (score >= 0.5 || (words.length === 1 && hit === 1))) results.push({ url: m.strMealThumb, score: score });
+      });
+    }).catch(function(){}).then(function(){ return results.length ? null : next(i + 1); });
+  }
+  return next(0).then(function(){
+    return results.sort(function(a, b){ return b.score - a.score; }).map(function(x){ return x.url; });
+  });
+}
+/* 3. Wikimedia Commons photo search */
+function coverFromCommons(title){
+  var words = coverWords(title);
+  if(!words.length) return Promise.resolve([]);
+  var url = 'https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch=' +
+    encodeURIComponent(String(title).trim() + ' food') + '&prop=imageinfo&iiprop=url|mime|size&iiurlwidth=800';
+  return fetchJsonCors(url).then(function(j){
+    var pages = (j && j.query && j.query.pages) ? Object.keys(j.query.pages).map(function(k){ return j.query.pages[k]; }) : [];
+    return pages.sort(function(a, b){ return (a.index || 0) - (b.index || 0); }).filter(function(p){
+      var ii = p.imageinfo && p.imageinfo[0];
+      if(!ii || !/^image\/(?:jpeg|png)$/.test(ii.mime) || (ii.width || 0) < 500) return false;
+      if(/logo|map|flag|icon|diagram|chart|poster|stamp|coat of arms/i.test(p.title)) return false;
+      return coverWords(p.title).some(function(w){ return words.indexOf(w) > -1; });
+    }).map(function(p){ return p.imageinfo[0].thumburl || p.imageinfo[0].url; });
+  });
+}
+/* all sources at once, best-first; the AI web search only steps in if nothing else turned up */
+function findCoverCandidates(rec){
+  var title = String(rec.title || "").trim();
+  function safe(p){ return p.catch(function(){ return []; }); }
+  return Promise.all([safe(coverFromSource(rec)), safe(coverFromMealDb(title)), safe(coverFromCommons(title))]).then(function(lists){
+    var found = [];
+    lists.forEach(function(l){ (l || []).forEach(function(u){ if(u && /^https?:/i.test(u) && found.indexOf(u) === -1) found.push(u); }); });
+    if(found.length || getActiveProvider().mode === "none") return found;
+    return autoFindCoverPhoto(title).then(function(u){ return u ? [u] : []; }).catch(function(){ return []; });
+  });
+}
+/* keep a copy inside the recipe where possible, so the picture can't vanish if the site changes */
+function toLocalCover(url){
+  return fetch(url, { mode: 'cors' }).then(function(r){ if(!r.ok) throw new Error('x'); return r.blob(); })
+    .then(function(b){ return resizeImage(b, 700, 0.72); })
+    .then(function(dataUrl){ return { cover: dataUrl, web: false }; })
+    .catch(function(){ return { cover: url, web: true }; });
 }
 
 function parseJsonLoose(text){
@@ -1634,12 +1772,40 @@ function renderApp(){
   if(ui.showAdd){
     html += renderAddModal();
   }
+  if(ui.coverPick){
+    html += renderCoverPickModal();
+  }
   if(ui.tidy){
     html += renderTidyModal();
   }
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
+  return html;
+}
+
+function renderCoverPickModal(){
+  var c = ui.coverPick;
+  var r = state.recipes.filter(function(x){ return x.id === c.recipeId; })[0];
+  if(!r){ ui.coverPick = null; return ''; }
+  var html = '<div class="overlay" id="cover-overlay"><div class="modal">';
+  html += '<h3>Find a picture for \u201c' + esc(r.title) + '\u201d</h3>';
+  if(c.loading){
+    html += '<div class="status-line"><span class="spinner"></span> Looking for a suitable picture\u2026</div></div></div>';
+    return html;
+  }
+  if(!c.cands.length){
+    html += '<p style="font-size:13px;">I couldn\u2019t find a good match for that name. You can upload your own from <strong>Edit recipe</strong>, or rename the recipe more simply (for example \u201cTomato soup\u201d) and try again.</p>';
+    html += '<button class="btn btn-ghost" id="cover-cancel-btn">Close</button></div></div>';
+    return html;
+  }
+  html += '<p style="font-size:12px;color:var(--ink-soft);margin:0;">Picture ' + (c.idx + 1) + ' of ' + c.cands.length + '. It might not be the exact dish \u2014 only use it if it looks right.</p>';
+  html += '<img class="cover-preview" id="cover-preview-img" alt="Suggested picture" src="' + esc(c.cands[c.idx]) + '" onerror="this.outerHTML=\'<p class=&quot;error-line&quot;>That picture wouldn\\u2019t load \u2014 try another.</p>\'">';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  html += '<button class="btn btn-primary" id="cover-use-btn" ' + (c.saving ? 'disabled' : '') + '>' + (c.saving ? 'Saving\u2026' : 'Use this picture') + '</button>';
+  if(c.cands.length > 1) html += '<button class="btn btn-ghost" id="cover-next-btn" ' + (c.saving ? 'disabled' : '') + '>Try another</button>';
+  html += '<button class="btn btn-ghost" id="cover-cancel-btn">Cancel</button>';
+  html += '</div></div></div>';
   return html;
 }
 
@@ -1670,8 +1836,10 @@ function renderTidyModal(){
     if(a.title !== r.title) html += '<div style="font-family:var(--font-serif);font-size:18px;margin-bottom:6px;">' + esc(a.title) + '</div>';
     html += '<strong>Ingredients</strong><ul>';
     a.ingredients.forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
-    html += '</ul><strong>Method</strong><ol>';
-    a.steps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
+    var showQ = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
+    var previewSteps = showQ ? annotateStepsWithQuantities({ ingredients: a.ingredients }, a.steps) : a.steps;
+    html += '</ul><strong>Method</strong> <span style="font-size:11px;color:var(--ink-soft);">(quantities in method: ' + (showQ ? 'on' : 'off') + ')</span><ol>';
+    previewSteps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
     html += '</ol></div>';
   }
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
@@ -1770,6 +1938,7 @@ function renderRecipeDetail(r){
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-layout">Layout: ' + (layout==="bullets" ? "bullet points" : "numbered steps") + '</button>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
+  if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
   html += '<button class="btn btn-ghost btn-sm" id="tidy-open-btn">Tidy up recipe</button>';
   if(ui.confirmDeleteId === r.id){
@@ -1781,10 +1950,17 @@ function renderRecipeDetail(r){
   }
   html += '</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">';
-  html += '<button class="btn btn-accent btn-sm" id="share-download-btn">Share: download recipe</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="share-copy-btn">Share: copy as text</button>';
-  html += '<button class="btn btn-primary btn-sm" id="share-whatsapp-btn">Share on WhatsApp</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="share-link-btn">Copy share link</button>';
+  html += '<div class="menu-wrap"><button class="btn btn-primary btn-sm" id="share-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.shareMenu ? 'true' : 'false') + '">Share \u25be</button>';
+  if(ui.shareMenu){
+    html += '<div class="menu" role="menu">';
+    html += '<button class="menu-item" role="menuitem" id="share-whatsapp-btn">Send on WhatsApp<small>A link they can tap to add it to their Recipe Box</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-link-btn">Copy share link<small>Paste anywhere \u2014 opens straight to import</small></button>';
+    if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-native-btn">More apps\u2026<small>Messages, email, AirDrop and so on</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-copy-btn">Copy as text<small>Plain text for an email or note</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-download-btn">Download recipe file<small>The full recipe with photos, as a file</small></button>';
+    html += '</div>';
+  }
+  html += '</div>';
   html += '</div></div></div>';
 
   html += '<div class="card-block"><h4>Ingredients</h4>';
@@ -2024,7 +2200,7 @@ function renderAddModal(){
     if(d.cover) html += '<img src="' + d.cover + '" style="width:80px;height:80px;object-fit:cover;border-radius:5px;margin-bottom:8px;display:block;">';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
     html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Choose photo<input type="file" accept="image/*" id="cover-input" style="display:none;"></label>';
-    html += '<button class="btn btn-ghost btn-sm" id="auto-cover-btn" ' + (d.coverLoading?"disabled":"") + '>' + (d.coverLoading ? "Searching..." : "Find a photo for me") + '</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="auto-cover-btn" ' + (d.coverLoading?"disabled":"") + '>' + (d.coverLoading ? "Searching..." : ((d.coverCands && d.coverCands.length > 1 && d.coverCandsFor === d.title.trim()) ? "Try another photo" : "Find a photo for me")) + '</button>';
     html += '</div>';
     if(d.coverLoading) html += '<div class="status-line"><span class="spinner"></span> Looking for a cover photo...</div>';
     html += '</div>';
@@ -2122,6 +2298,24 @@ function attachHandlers(){
 
 /* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
 function attachOverlayHandlers(){
+  var coverOverlay = document.getElementById('cover-overlay');
+  if(coverOverlay) coverOverlay.onclick = function(e){ if(e.target === coverOverlay && ui.coverPick && !ui.coverPick.saving){ ui.coverPick = null; render(); } };
+  var coverCancel = document.getElementById('cover-cancel-btn');
+  if(coverCancel) coverCancel.onclick = function(){ ui.coverPick = null; render(); };
+  var coverNext = document.getElementById('cover-next-btn');
+  if(coverNext) coverNext.onclick = function(){ ui.coverPick.idx = (ui.coverPick.idx + 1) % ui.coverPick.cands.length; render(); };
+  var coverUse = document.getElementById('cover-use-btn');
+  if(coverUse) coverUse.onclick = function(){
+    var c = ui.coverPick;
+    var rr = state.recipes.filter(function(x){ return x.id === c.recipeId; })[0];
+    if(!rr){ ui.coverPick = null; render(); return; }
+    c.saving = true; render();
+    toLocalCover(c.cands[c.idx]).then(function(res){
+      rr.cover = res.cover; rr.coverIsWebLink = res.web;
+      ui.coverPick = null;
+      saveState();
+    });
+  };
   var tidyOverlay = document.getElementById('tidy-overlay');
   if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
   var tidyCancel = document.getElementById('tidy-cancel-btn');
@@ -2209,6 +2403,7 @@ function attachRecipeListHandlers(){
       ui.detailQuantitiesOverride = null;
       ui.detailLevelOverride = null;
       ui.detailNote = "";
+      ui.shareMenu = false;
       ui.confirmDeleteId = null;
       render();
     };
@@ -2271,17 +2466,31 @@ function attachRecipeDetailHandlers(r){
   var editBtn = document.getElementById('edit-recipe-btn');
   if(editBtn) editBtn.onclick = function(){ openEditModal(r); };
 
-  var shareDownloadBtn = document.getElementById('share-download-btn');
-  if(shareDownloadBtn) shareDownloadBtn.onclick = function(){ exportSingleRecipe(r); };
-  var shareCopyBtn = document.getElementById('share-copy-btn');
-  if(shareCopyBtn) shareCopyBtn.onclick = function(){ copyRecipeAsText(r); };
-  var shareWaBtn = document.getElementById('share-whatsapp-btn');
-  if(shareWaBtn){
-    warmShareLink(r);
-    shareWaBtn.onclick = function(){ shareOnWhatsApp(r); };
+  warmShareLink(r);
+  var shareMenuBtn = document.getElementById('share-menu-btn');
+  if(shareMenuBtn) shareMenuBtn.onclick = function(e){ e.stopPropagation(); ui.shareMenu = !ui.shareMenu; render(); };
+  function menuAction(id, fn){
+    var el = document.getElementById(id);
+    if(el) el.onclick = function(){ ui.shareMenu = false; fn(); render(); };
   }
-  var shareLinkBtn = document.getElementById('share-link-btn');
-  if(shareLinkBtn) shareLinkBtn.onclick = function(){ copyShareLink(r); };
+  menuAction('share-whatsapp-btn', function(){ shareOnWhatsApp(r); });
+  menuAction('share-link-btn', function(){ copyShareLink(r); });
+  menuAction('share-copy-btn', function(){ copyRecipeAsText(r); });
+  menuAction('share-download-btn', function(){ exportSingleRecipe(r); });
+  menuAction('share-native-btn', function(){
+    if(shareNeedsHosting()) return;
+    navigator.share({ title: r.title, text: '\u201c' + r.title + '\u201d \u2014 open this link to add it to your Recipe Box:', url: getShareLink(r) }).catch(function(){});
+  });
+  var findCoverBtn = document.getElementById('find-cover-btn');
+  if(findCoverBtn) findCoverBtn.onclick = function(){
+    ui.coverPick = { recipeId: r.id, cands: [], idx: 0, loading: true, saving: false };
+    render();
+    findCoverCandidates(r).then(function(list){
+      if(!ui.coverPick || ui.coverPick.recipeId !== r.id) return;
+      ui.coverPick.cands = list; ui.coverPick.idx = 0; ui.coverPick.loading = false;
+      render();
+    });
+  };
 
   var askDeleteBtn = document.getElementById('ask-delete');
   if(askDeleteBtn) askDeleteBtn.onclick = function(){ ui.confirmDeleteId = r.id; render(); };
@@ -2462,22 +2671,22 @@ function attachModalHandlers(){
     if(autoCoverBtn){
       autoCoverBtn.onclick = function(){
         syncDraftFromDom();
-        if(!d.title.trim()){ d.error = "Add a title first so I know what to search for."; render(); return; }
-        if(getActiveProvider().mode === "none"){
-          d.error = "Auto photo search needs API access (no local/no-AI version of this one) \u2014 upload your own photo instead, or import from a recipe link, which can often grab the site's own photo for free.";
-          render();
-          return;
+        var title = d.title.trim();
+        if(!title){ d.error = "Add a title first so I know what to search for."; render(); return; }
+        if(d.coverCands && d.coverCandsFor === title && d.coverCands.length){
+          d.coverIdx = (d.coverIdx + 1) % d.coverCands.length;
+          d.cover = d.coverCands[d.coverIdx]; d.coverIsWebLink = true; d.error = "";
+          render(); return;
         }
         d.coverLoading = true; d.error = "";
         render();
-        autoFindCoverPhoto(d.title.trim()).then(function(url){
+        findCoverCandidates({ title: title, originalUrl: d.url }).then(function(list){
           d.coverLoading = false;
-          if(url){ d.cover = url; d.coverIsWebLink = true; }
-          else { d.error = "Couldn't find a photo automatically \u2014 try uploading one instead."; }
-          render();
-        }).catch(function(err){
-          d.coverLoading = false;
-          d.error = friendlyErrorMessage(err, "Couldn't find a photo automatically \u2014 try uploading one instead.");
+          if(list.length){
+            d.coverCands = list; d.coverCandsFor = title; d.coverIdx = 0;
+            d.cover = list[0]; d.coverIsWebLink = true;
+            d.error = list.length > 1 ? "Not quite right? Tap \u201cTry another photo\u201d." : "";
+          } else d.error = "Couldn't find a photo automatically \u2014 try uploading one instead.";
           render();
         });
       };
@@ -2898,6 +3107,12 @@ function checkIncomingShare(){
   });
 }
 window.addEventListener('hashchange', checkIncomingShare);
+document.addEventListener('click', function(e){
+  if(ui.shareMenu && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; render(); }
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && ui.shareMenu){ ui.shareMenu = false; render(); }
+});
 
 function exportSingleRecipe(r){
   var shareable = {
