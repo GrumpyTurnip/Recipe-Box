@@ -1280,6 +1280,17 @@ function hashString(str){
   for(var i = 0; i < str.length; i++){ h = (((h << 5) + h) ^ str.charCodeAt(i)) | 0; }
   return str.length + ":" + (h >>> 0).toString(36);
 }
+function coreOf(r){
+  return JSON.stringify({ t: r.title, i: r.ingredients, s: r.steps, g: r.tags || [] });
+}
+function snapshotOriginal(r){
+  if(r.original) return false;
+  r.original = JSON.parse(JSON.stringify({ title: r.title, ingredients: r.ingredients, steps: r.steps, tags: r.tags || [], savedAt: Date.now() }));
+  return true;
+}
+function dropOriginalIfUnchanged(r, madeNow, before){
+  if(madeNow && coreOf(r) === before) delete r.original;
+}
 function recipeHash(r){
   var c = {};
   Object.keys(r).forEach(function(k){ if(k !== 'updatedAt') c[k] = r[k]; });
@@ -1812,6 +1823,9 @@ function renderApp(){
   if(ui.tidy){
     html += renderTidyModal();
   }
+  if(ui.viewOriginalId){
+    html += renderOriginalModal();
+  }
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
@@ -1839,6 +1853,32 @@ function renderCoverPickModal(){
   html += '<button class="btn btn-primary" id="cover-use-btn" ' + (c.saving ? 'disabled' : '') + '>' + (c.saving ? 'Saving\u2026' : 'Use this picture') + '</button>';
   if(c.cands.length > 1) html += '<button class="btn btn-ghost" id="cover-next-btn" ' + (c.saving ? 'disabled' : '') + '>Try another</button>';
   html += '<button class="btn btn-ghost" id="cover-cancel-btn">Cancel</button>';
+  html += '</div></div></div>';
+  return html;
+}
+
+function renderOriginalModal(){
+  var r = state.recipes.filter(function(x){ return x.id === ui.viewOriginalId; })[0];
+  if(!r || !r.original){ ui.viewOriginalId = null; return ''; }
+  var o = r.original;
+  var html = '<div class="overlay" id="original-overlay"><div class="modal">';
+  html += '<h3>Original version</h3>';
+  html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">This is how \u201c' + esc(o.title) + '\u201d looked before any edits or tidy-ups.</p>';
+  html += '<div class="card-block"><div style="font-family:var(--font-serif);font-size:20px;margin-bottom:8px;">' + esc(o.title) + '</div>';
+  html += '<strong>Ingredients</strong><ul>';
+  (o.ingredients || []).forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
+  html += '</ul><strong>Method</strong><ol>';
+  (o.steps || []).forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
+  html += '</ol></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+  if(ui.confirmRestore){
+    html += '<span style="font-size:12px;align-self:center;">Replace the current version?</span>';
+    html += '<button class="btn btn-primary" id="original-restore-yes">Yes, restore</button>';
+    html += '<button class="btn btn-ghost" id="original-restore-no">Cancel</button>';
+  } else {
+    html += '<button class="btn btn-primary" id="original-restore-btn">Restore this version</button>';
+    html += '<button class="btn btn-ghost" id="original-close-btn">Close</button>';
+  }
   html += '</div></div></div>';
   return html;
 }
@@ -1974,6 +2014,7 @@ function renderRecipeDetail(r){
   if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
   html += '<button class="btn btn-ghost btn-sm" id="tidy-open-btn">Tidy up recipe</button>';
+  if(r.original) html += '<button class="btn btn-ghost btn-sm" id="view-original-btn">View original</button>';
   if(ui.confirmDeleteId === r.id){
     html += '<span style="font-size:12px;align-self:center;">Delete for good?</span>';
     html += '<button class="btn btn-danger btn-sm" id="confirm-delete">Yes, delete</button>';
@@ -2359,6 +2400,22 @@ function attachOverlayHandlers(){
       saveState();
     });
   };
+  var ovl = document.getElementById('original-overlay');
+  function closeOriginal(){ ui.viewOriginalId = null; ui.confirmRestore = false; render(); }
+  if(ovl) ovl.onclick = function(e){ if(e.target === ovl) closeOriginal(); };
+  var oc = document.getElementById('original-close-btn'); if(oc) oc.onclick = closeOriginal;
+  var orb = document.getElementById('original-restore-btn'); if(orb) orb.onclick = function(){ ui.confirmRestore = true; render(); };
+  var orn = document.getElementById('original-restore-no'); if(orn) orn.onclick = function(){ ui.confirmRestore = false; render(); };
+  var ory = document.getElementById('original-restore-yes');
+  if(ory) ory.onclick = function(){
+    var rr = state.recipes.filter(function(x){ return x.id === ui.viewOriginalId; })[0];
+    if(rr && rr.original){
+      rr.title = rr.original.title; rr.ingredients = rr.original.ingredients; rr.steps = rr.original.steps; rr.tags = rr.original.tags;
+      rr.stepsQuick = null; rr.stepsGuided = null; delete rr.original;
+    }
+    ui.viewOriginalId = null; ui.confirmRestore = false; ui.detailLevelOverride = null;
+    saveState();
+  };
   var tidyOverlay = document.getElementById('tidy-overlay');
   if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
   var tidyCancel = document.getElementById('tidy-cancel-btn');
@@ -2368,11 +2425,13 @@ function attachOverlayHandlers(){
     var t = ui.tidy;
     var rr = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
     if(rr){
+      var madeSnap = snapshotOriginal(rr), beforeCore = coreOf(rr);
       rr.title = t.after.title || rr.title;
       rr.ingredients = t.after.ingredients;
       rr.steps = t.after.steps;
       if(t.after.tags) rr.tags = t.after.tags;
       rr.stepsQuick = null; rr.stepsGuided = null;
+      dropOriginalIfUnchanged(rr, madeSnap, beforeCore);
     }
     ui.tidy = null; ui.detailLevelOverride = null;
     saveState();
@@ -2491,6 +2550,8 @@ function attachRecipeDetailHandlers(r){
     if(lv === "quick") r.stepsQuick = null; else if(lv === "guided") r.stepsGuided = null; else return;
     setMethodLevel(r, lv);
   };
+  var vo = document.getElementById('view-original-btn');
+  if(vo) vo.onclick = function(){ ui.viewOriginalId = r.id; ui.confirmRestore = false; render(); };
   var tidyOpen = document.getElementById('tidy-open-btn');
   if(tidyOpen) tidyOpen.onclick = function(){
     var res = tidyRecipeLocal(r);
@@ -2866,6 +2927,7 @@ function attachModalHandlers(){
       if(ui.editingRecipeId){
         var existing = state.recipes.find(function(x){ return x.id === ui.editingRecipeId; });
         if(existing){
+          var madeSnap2 = snapshotOriginal(existing), beforeCore2 = coreOf(existing);
           existing.title = d.title.trim();
           existing.cover = d.cover;
           existing.coverIsWebLink = !!d.coverIsWebLink;
@@ -2875,6 +2937,7 @@ function attachModalHandlers(){
           existing.originalUrl = d.url || existing.originalUrl;
           existing.stepsQuick = null;
           existing.stepsGuided = null;
+          dropOriginalIfUnchanged(existing, madeSnap2, beforeCore2);
         }
         ui.editingRecipeId = null;
         ui.showAdd = false;
