@@ -174,6 +174,15 @@
   details.setup ol{font-size:13px;line-height:1.55;padding-left:20px;margin:6px 0 10px;}
   .notice{font-size:12px;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px 10px;margin:8px 0;}
   .notice.err{border-color:var(--brick);color:var(--brick);}
+  .list-row .btn{white-space:nowrap;flex-shrink:0;}
+  .to-pantry{margin-left:auto;white-space:nowrap;}
+  .to-pantry + .small-x{margin-left:6px;}
+  .detail-meta{margin:2px 0 8px;}
+  .meta-chip{display:inline-block;font-size:12px;color:var(--ink-soft);background:var(--paper-2, #f1ece3);border-radius:999px;padding:2px 10px;margin:0 6px 6px 0;white-space:nowrap;}
+  .rcard .meta-chip{font-size:11px;padding:1px 8px;margin:0 4px 4px 0;}
+  .more-opts{margin-top:18px;padding-top:12px;border-top:1px solid var(--line, #ddd);}
+  .more-opts h4{margin:0 0 4px;font-size:13px;}
+  .orig-banner{background:#e8f0e4;border:1px solid var(--sage, #7a9a6e);padding:10px 12px;border-radius:6px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
   .banner{background:#f7dbd7;border:1px solid var(--brick);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:14px;}
   footer.tip{text-align:center;font-size:11px;color:var(--ink-soft);margin-top:40px;}
 
@@ -334,7 +343,7 @@ function freshDraft(){
   return {
     mode: "manual",
     pasteText: "",
-    title: "", cover: null,
+    title: "", cover: null, time: "", servings: "",
     ingredients: [{name:"",amount:"",unit:""}],
     steps: [""],
     tags: [],
@@ -350,10 +359,12 @@ function freshDraft(){
 }
 
 function openEditModal(r){
+  ui.confirmDeleteId = null;
   ui.draft = {
     mode: "manual",
     pasteText: "",
     title: r.title || "",
+    time: r.time || "", servings: r.servings || "",
     cover: r.cover || null,
     coverIsWebLink: !!r.coverIsWebLink,
     ingredients: (r.ingredients||[]).map(function(i){ return {name:i.name||"", amount:i.amount||"", unit:i.unit||""}; }),
@@ -515,6 +526,48 @@ function explodeBlob(text){
   }).join('\n');
 }
 
+function metaText(v){
+  if(v == null) return "";
+  if(Array.isArray(v)) v = v[0];
+  if(v && typeof v === 'object') v = v.text || v.name || "";
+  var t = String(v).replace(/\s+/g, ' ').trim();
+  return t.length > 40 ? t.slice(0, 40).trim() : t;
+}
+function isoToTime(v){
+  var t = metaText(v);
+  var m = t.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:\d+S)?)?$/i);
+  if(m && (m[1] || m[2] || m[3])){
+    var mins = (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0), h = Math.floor(mins / 60), mm = mins % 60;
+    return (h ? h + ' hr' + (mm ? ' ' : '') : '') + (mm ? mm + ' min' : '');
+  }
+  if(/^\d+$/.test(t)) return t + ' min';
+  return t;
+}
+function yieldText(v){ return metaText(v).replace(/^serves\s+/i, ''); }
+function servingsLabel(sv){ sv = metaText(sv); if(!sv) return ''; return /^\d+(\s*[-\u2013]\s*\d+)?$/.test(sv) ? 'Serves ' + sv : sv; }
+function applyMeta(d, p){
+  if(!p) return;
+  var t = isoToTime(p.time || p.totalTime || ""), sv = yieldText(p.servings || p.recipeYield || "");
+  if(t) d.time = t;
+  if(sv) d.servings = sv;
+}
+function extractMetaFromText(text){
+  var out = { time: "", servings: "" };
+  var sv = String(text || "").match(/\b(?:serves|servings?|makes|yields?|portions?)\s*[:\-]?\s*(\d{1,3}(?:\s*(?:-|\u2013|to)\s*\d{1,3})?)\b/i)
+        || String(text || "").match(/\b(\d{1,3})\s+(?:servings?|portions?)\b/i);
+  if(sv) out.servings = sv[1].replace(/\s+/g, ' ');
+  var tm = String(text || "").match(/\b(?:total time|cook(?:ing)? time|prep(?:aration)? time|ready in)\s*[:\-]?\s*((?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m)\b[\s,]*(?:and\s*)?){1,2})/i);
+  if(tm) out.time = tm[1].trim().replace(/\bminutes?\b/ig, 'min').replace(/\bhours?\b/ig, 'hr').replace(/[\s,]+$/, '');
+  return out;
+}
+function metaChips(r){
+  var parts = [];
+  var t = metaText(r.time), sv = servingsLabel(r.servings);
+  if(t) parts.push('<span class="meta-chip">\u23f1 ' + esc(t) + '</span>');
+  if(sv) parts.push('<span class="meta-chip">\ud83c\udf7d ' + esc(sv) + '</span>');
+  return parts.join('');
+}
+
 function heuristicParseRecipeText(text){
   var lines = explodeBlob(String(text || "")).split('\n')
     .map(function(l){ return cleanMarkdownLine(l.trim()); })
@@ -583,7 +636,8 @@ function heuristicParseRecipeText(text){
   if(steps.length >= 2 && splittable / steps.length >= 0.75){
     steps = steps.map(function(l){ var m = l.match(SPLIT_RE); return (m && m[1].split(/\s+/).length <= 6) ? m[1] + ': ' + m[2] : l; });
   }
-  return { title: title, ingredients: ingredients, steps: steps, tags: titleTags };
+  var hm = extractMetaFromText(text);
+  return { title: title, ingredients: ingredients, steps: steps, tags: titleTags, time: hm.time, servings: hm.servings };
 }
 
 function extractYouTubeDescription(html){
@@ -647,7 +701,7 @@ function extractRecipeFromHtml(html){
   var steps = jsonLdInstructionsToSteps(recipe.recipeInstructions);
   var title = recipe.name || "";
   var image = jsonLdImageToUrl(recipe.image);
-  return { title: title, ingredients: ingredients, steps: steps, image: image };
+  return { title: title, ingredients: ingredients, steps: steps, image: image, time: isoToTime(recipe.totalTime || recipe.cookTime || recipe.prepTime), servings: yieldText(recipe.recipeYield) };
 }
 
 var TIME_RE = /\b\d+(?:\s*[\u2013-]\s*\d+)?\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?)\b|\b\d{2,3}\s*\u00b0\s*[CF]?|\b\d{2,3}\s*(?:\u00b0\s*)?[CF]\b|\bgas mark\s*\d+\b|\b\d{2,3}\s*degrees\b/gi;
@@ -1823,9 +1877,6 @@ function renderApp(){
   if(ui.tidy){
     html += renderTidyModal();
   }
-  if(ui.viewOriginalId){
-    html += renderOriginalModal();
-  }
   if(ui.pendingShare && (sync.ready || !syncIsActive())){
     html += renderShareModal();
   }
@@ -1853,32 +1904,6 @@ function renderCoverPickModal(){
   html += '<button class="btn btn-primary" id="cover-use-btn" ' + (c.saving ? 'disabled' : '') + '>' + (c.saving ? 'Saving\u2026' : 'Use this picture') + '</button>';
   if(c.cands.length > 1) html += '<button class="btn btn-ghost" id="cover-next-btn" ' + (c.saving ? 'disabled' : '') + '>Try another</button>';
   html += '<button class="btn btn-ghost" id="cover-cancel-btn">Cancel</button>';
-  html += '</div></div></div>';
-  return html;
-}
-
-function renderOriginalModal(){
-  var r = state.recipes.filter(function(x){ return x.id === ui.viewOriginalId; })[0];
-  if(!r || !r.original){ ui.viewOriginalId = null; return ''; }
-  var o = r.original;
-  var html = '<div class="overlay" id="original-overlay"><div class="modal">';
-  html += '<h3>Original version</h3>';
-  html += '<p style="font-size:13px;color:var(--ink-soft);margin-top:0;">This is how \u201c' + esc(o.title) + '\u201d looked before any edits or tidy-ups.</p>';
-  html += '<div class="card-block"><div style="font-family:var(--font-serif);font-size:20px;margin-bottom:8px;">' + esc(o.title) + '</div>';
-  html += '<strong>Ingredients</strong><ul>';
-  (o.ingredients || []).forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
-  html += '</ul><strong>Method</strong><ol>';
-  (o.steps || []).forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
-  html += '</ol></div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-  if(ui.confirmRestore){
-    html += '<span style="font-size:12px;align-self:center;">Replace the current version?</span>';
-    html += '<button class="btn btn-primary" id="original-restore-yes">Yes, restore</button>';
-    html += '<button class="btn btn-ghost" id="original-restore-no">Cancel</button>';
-  } else {
-    html += '<button class="btn btn-primary" id="original-restore-btn">Restore this version</button>';
-    html += '<button class="btn btn-ghost" id="original-close-btn">Close</button>';
-  }
   html += '</div></div></div>';
   return html;
 }
@@ -1986,7 +2011,7 @@ function renderRecipeList(){
       }
       html += '<div class="body"><h3>' + esc(r.title) + '</h3><div class="meta">';
       (r.tags||[]).slice(0,3).forEach(function(t){ html += '<span class="tagpill">' + esc(t) + '</span>'; });
-      html += '</div></div></div>';
+      html += '</div>' + (metaChips(r) ? '<div class="meta" style="margin-top:4px;">' + metaChips(r) + '</div>' : '') + '</div></div>';
     });
     html += '</div>';
   }
@@ -1995,6 +2020,10 @@ function renderRecipeList(){
 
 /* ---------- recipe detail ---------- */
 function renderRecipeDetail(r){
+  var origMode = !!(r.original && ui.viewOriginalId === r.id);
+  if(origMode){
+    r = Object.assign({}, r, { title: r.original.title, ingredients: r.original.ingredients, steps: r.original.steps, tags: r.original.tags || [], stepsQuick: null, stepsGuided: null });
+  }
   var layout = state.settings.layout;
   var showQty = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
   var detailLevel = ui.detailLevelOverride || state.settings.detailLevel;
@@ -2004,25 +2033,22 @@ function renderRecipeDetail(r){
   html += '<div class="detail-header">';
   html += '<div class="detail-cover' + (r.cover ? '' : ' no-cover') + '"' + (r.cover ? ' style="background-image:url(\'' + r.cover + '\')"' : '') + '></div>';
   html += '<div class="detail-info"><h2>' + esc(r.title) + '</h2>';
+  if(metaChips(r)) html += '<div class="detail-meta">' + metaChips(r) + '</div>';
   html += '<div class="chip-row" style="margin-bottom:12px;">';
   (r.tags||[]).forEach(function(t){ html += '<span class="tagpill">' + esc(t) + '</span>'; });
   html += '</div>';
+  if(origMode){
+    html += '<div class="no-print orig-banner"><strong>Original version</strong> \u2014 how this recipe looked before any edits or tidy-ups. <button class="btn btn-primary btn-sm" id="show-current-btn">Back to current version</button></div>';
+  } else {
   html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;">';
   html += '<button class="btn btn-accent btn-sm" id="add-to-shopping">Add ingredients to shopping list</button>';
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
   if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="tidy-open-btn">Tidy up recipe</button>';
-  if(r.original) html += '<button class="btn btn-ghost btn-sm" id="view-original-btn">View original</button>';
-  if(ui.confirmDeleteId === r.id){
-    html += '<span style="font-size:12px;align-self:center;">Delete for good?</span>';
-    html += '<button class="btn btn-danger btn-sm" id="confirm-delete">Yes, delete</button>';
-    html += '<button class="btn btn-ghost btn-sm" id="cancel-delete">Cancel</button>';
-  } else {
-    html += '<button class="btn btn-danger btn-sm" id="ask-delete">Delete recipe</button>';
-  }
   html += '</div>';
+  }
+  if(!origMode){
   html += '<div class="no-print" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">';
   html += '<div class="menu-wrap"><button class="btn btn-primary btn-sm" id="share-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.shareMenu ? 'true' : 'false') + '">Share \u25be</button>';
   if(ui.shareMenu){
@@ -2038,6 +2064,7 @@ function renderRecipeDetail(r){
   }
   html += '</div>';
   html += '</div>';
+  }
   html += '<div class="print-only"><div class="nl-label">My changes</div><div class="nl-line"></div><div class="nl-line"></div><div class="nl-line"></div></div>';
   html += '</div></div>';
 
@@ -2058,6 +2085,7 @@ function renderRecipeDetail(r){
     quick: "Short on time: fewer, shorter steps with the timings and temperatures picked out.",
     guided: "Taking it slow: each step expanded with what to look for and the usual slips. Written by AI \u2014 give it a sanity check."
   };
+  var htmlPre = html; html = '';
   html += '<div class="method-bar"><div class="mb-top"><span class="mb-label">Method</span><div class="seg" role="group" aria-label="Method detail">';
   [["quick", "Quick"], ["detailed", "Full"], ["guided", "Guided"]].forEach(function(o){
     var busy = summarizing && ui.detailLoadingLevel === o[0];
@@ -2076,6 +2104,7 @@ function renderRecipeDetail(r){
     if(chips.length) html += '<div class="timing-strip"><span>Timings:</span>' + chips.slice(0, 10).map(function(c){ return '<span class="tm">' + esc(c) + '</span>'; }).join('') + '</div>';
   }
   html += '</div>';
+  html = origMode ? htmlPre : (htmlPre + html);
 
   html += '<div class="card-block"><h4>Method (' + displaySteps.length + ' step' + (displaySteps.length === 1 ? '' : 's') + ')</h4><ol class="steps-list' + (layout==="bullets"?" bullets":"") + '">';
   displaySteps.forEach(function(st,i){
@@ -2115,8 +2144,12 @@ function renderPantry(){
     html += '<input type="checkbox" data-shop-toggle="' + item.id + '" ' + (item.checked?"checked":"") + '>';
     html += '<span>' + esc(item.name) + '</span>';
     if(inPantry && !item.checked) html += '<span class="pantry-tag">already in pantry?</span>';
+    html += '<button class="btn btn-ghost btn-sm to-pantry" data-shop-to-pantry="' + item.id + '" title="Move to pantry" aria-label="Move ' + esc(item.name) + ' to pantry">\u2192 Pantry</button>';
     html += '<button class="small-x" data-shop-remove="' + item.id + '">&times;</button></div>';
   });
+  if(state.shopping.some(function(i){ return i.checked; })){
+    html += '<div style="margin-top:10px;"><button class="btn btn-accent btn-sm" id="shop-ticked-to-pantry">Move ticked items to pantry</button></div>';
+  }
   html += '<div class="list-row" style="margin-top:12px;">';
   html += '<input type="text" id="shop-input" placeholder="Add an item...">';
   html += '<button class="btn btn-sm btn-primary" id="shop-add-btn">Add</button></div></div>';
@@ -2278,6 +2311,7 @@ function renderAddModal(){
   if(d.mode === "manual"){
     html += '<div>';
     html += '<div class="field-group"><label class="field">Title</label><input type="text" id="title-input" placeholder="Sunday roast chicken" value="' + esc(d.title) + '"></div>';
+    html += '<div class="field-group" style="display:flex;gap:10px;"><div style="flex:1;"><label class="field">Time</label><input type="text" id="time-input" placeholder="e.g. 45 min" maxlength="40" value="' + esc(d.time || '') + '"></div><div style="flex:1;"><label class="field">Portions</label><input type="text" id="servings-input" placeholder="e.g. 4" maxlength="40" value="' + esc(d.servings || '') + '"></div></div>';
     html += '<div class="field-group"><label class="field">Cover photo</label>';
     if(d.cover) html += '<img src="' + d.cover + '" style="width:80px;height:80px;object-fit:cover;border-radius:5px;margin-bottom:8px;display:block;">';
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
@@ -2318,6 +2352,25 @@ function renderAddModal(){
 
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-primary" id="save-recipe-btn">' + (ui.editingRecipeId ? 'Save changes' : 'Save recipe') + '</button>';
     html += '<button class="btn btn-ghost" id="tidy-draft-btn" type="button">Tidy up</button></div>';
+    if(ui.editingRecipeId){
+      var er = state.recipes.filter(function(x){ return x.id === ui.editingRecipeId; })[0];
+      html += '<div class="more-opts"><h4>More options</h4>';
+      html += '<p style="font-size:12px;color:var(--ink-soft);margin:0 0 10px;">Tidy up and the version switch save your edits first.</p>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+      html += '<button class="btn btn-ghost btn-sm" id="edit-tidy-open-btn" type="button">Tidy up with preview\u2026</button>';
+      if(er && er.original){
+        var viewingO = ui.viewOriginalId === er.id;
+        html += '<div class="seg" role="group" aria-label="Version to show"><button type="button" id="ver-current-btn" class="' + (viewingO ? '' : 'on') + '">Current</button><button type="button" id="ver-original-btn" class="' + (viewingO ? 'on' : '') + '">Original</button></div>';
+      }
+      html += '</div>';
+      html += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+      if(ui.confirmDeleteId === ui.editingRecipeId){
+        html += '<span style="font-size:12px;">Delete for good?</span><button class="btn btn-danger btn-sm" id="edit-confirm-delete" type="button">Yes, delete</button><button class="btn btn-ghost btn-sm" id="edit-cancel-delete" type="button">Cancel</button>';
+      } else {
+        html += '<button class="btn btn-danger btn-sm" id="edit-ask-delete" type="button">Delete recipe</button>';
+      }
+      html += '</div></div>';
+    }
     html += '</div>';
   }
 
@@ -2330,6 +2383,8 @@ function syncDraftFromDom(){
   var d = ui.draft;
   var titleEl = document.getElementById('title-input');
   if(titleEl) d.title = titleEl.value;
+  var timeEl = document.getElementById('time-input'); if(timeEl) d.time = timeEl.value;
+  var servEl = document.getElementById('servings-input'); if(servEl) d.servings = servEl.value;
   var urlEl = document.getElementById('url-input');
   if(urlEl) d.url = urlEl.value;
   var textEl = document.getElementById('text-input');
@@ -2399,22 +2454,6 @@ function attachOverlayHandlers(){
       ui.coverPick = null;
       saveState();
     });
-  };
-  var ovl = document.getElementById('original-overlay');
-  function closeOriginal(){ ui.viewOriginalId = null; ui.confirmRestore = false; render(); }
-  if(ovl) ovl.onclick = function(e){ if(e.target === ovl) closeOriginal(); };
-  var oc = document.getElementById('original-close-btn'); if(oc) oc.onclick = closeOriginal;
-  var orb = document.getElementById('original-restore-btn'); if(orb) orb.onclick = function(){ ui.confirmRestore = true; render(); };
-  var orn = document.getElementById('original-restore-no'); if(orn) orn.onclick = function(){ ui.confirmRestore = false; render(); };
-  var ory = document.getElementById('original-restore-yes');
-  if(ory) ory.onclick = function(){
-    var rr = state.recipes.filter(function(x){ return x.id === ui.viewOriginalId; })[0];
-    if(rr && rr.original){
-      rr.title = rr.original.title; rr.ingredients = rr.original.ingredients; rr.steps = rr.original.steps; rr.tags = rr.original.tags;
-      rr.stepsQuick = null; rr.stepsGuided = null; delete rr.original;
-    }
-    ui.viewOriginalId = null; ui.confirmRestore = false; ui.detailLevelOverride = null;
-    saveState();
   };
   var tidyOverlay = document.getElementById('tidy-overlay');
   if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
@@ -2505,7 +2544,7 @@ function attachRecipeListHandlers(){
       ui.detailLevelOverride = null;
       ui.detailNote = "";
       ui.shareMenu = false;
-      ui.confirmDeleteId = null;
+      ui.confirmDeleteId = null; ui.viewOriginalId = null;
       render();
     };
   });
@@ -2550,15 +2589,8 @@ function attachRecipeDetailHandlers(r){
     if(lv === "quick") r.stepsQuick = null; else if(lv === "guided") r.stepsGuided = null; else return;
     setMethodLevel(r, lv);
   };
-  var vo = document.getElementById('view-original-btn');
-  if(vo) vo.onclick = function(){ ui.viewOriginalId = r.id; ui.confirmRestore = false; render(); };
-  var tidyOpen = document.getElementById('tidy-open-btn');
-  if(tidyOpen) tidyOpen.onclick = function(){
-    var res = tidyRecipeLocal(r);
-    ui.tidy = { recipeId: r.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
-    render();
-  };
-
+  var showCur = document.getElementById('show-current-btn');
+  if(showCur) showCur.onclick = function(){ ui.viewOriginalId = null; render(); };
   var editBtn = document.getElementById('edit-recipe-btn');
   if(editBtn) editBtn.onclick = function(){ openEditModal(r); };
 
@@ -2593,16 +2625,6 @@ function attachRecipeDetailHandlers(r){
     });
   };
 
-  var askDeleteBtn = document.getElementById('ask-delete');
-  if(askDeleteBtn) askDeleteBtn.onclick = function(){ ui.confirmDeleteId = r.id; render(); };
-  var confirmDeleteBtn = document.getElementById('confirm-delete');
-  if(confirmDeleteBtn) confirmDeleteBtn.onclick = function(){
-    state.recipes = state.recipes.filter(function(x){ return x.id !== r.id; });
-    ui.openRecipeId = null; ui.confirmDeleteId = null;
-    saveState();
-  };
-  var cancelDeleteBtn = document.getElementById('cancel-delete');
-  if(cancelDeleteBtn) cancelDeleteBtn.onclick = function(){ ui.confirmDeleteId = null; render(); };
 }
 
 function attachPantryHandlers(){
@@ -2621,6 +2643,24 @@ function attachPantryHandlers(){
       saveState();
     };
   });
+  function moveToPantry(ids){
+    var have = {};
+    state.pantry.forEach(function(p){ have[p.name.trim().toLowerCase()] = true; });
+    state.shopping.forEach(function(i){
+      if(ids.indexOf(i.id) === -1) return;
+      var k = i.name.trim().toLowerCase();
+      if(k && !have[k]){ state.pantry.push({ id: uid(), name: i.name.trim() }); have[k] = true; }
+    });
+    state.shopping = state.shopping.filter(function(i){ return ids.indexOf(i.id) === -1; });
+    saveState();
+  }
+  document.querySelectorAll('[data-shop-to-pantry]').forEach(function(btn){
+    btn.onclick = function(){ moveToPantry([btn.getAttribute('data-shop-to-pantry')]); };
+  });
+  var tickedBtn = document.getElementById('shop-ticked-to-pantry');
+  if(tickedBtn) tickedBtn.onclick = function(){
+    moveToPantry(state.shopping.filter(function(i){ return i.checked; }).map(function(i){ return i.id; }));
+  };
   document.querySelectorAll('[data-pantry-remove]').forEach(function(btn){
     btn.onclick = function(){
       var id = btn.getAttribute('data-pantry-remove');
@@ -2758,6 +2798,8 @@ function attachModalHandlers(){
   if(d.mode === "manual"){
     var titleInput = document.getElementById('title-input');
     if(titleInput) titleInput.oninput = function(){ d.title = titleInput.value; };
+    var timeInput = document.getElementById('time-input'); if(timeInput) timeInput.oninput = function(){ d.time = timeInput.value; };
+    var servInput = document.getElementById('servings-input'); if(servInput) servInput.oninput = function(){ d.servings = servInput.value; };
 
     var coverInput = document.getElementById('cover-input');
     if(coverInput){
@@ -2917,6 +2959,40 @@ function attachModalHandlers(){
       render();
     };
 
+    function saveThen(after){
+      syncDraftFromDom();
+      if(!d.title.trim()){ d.error = "Give the recipe a title first."; render(); return; }
+      var sb = document.getElementById('save-recipe-btn');
+      var id = ui.editingRecipeId;
+      sb.onclick();
+      after(id);
+    }
+    var etb = document.getElementById('edit-tidy-open-btn');
+    if(etb) etb.onclick = function(){
+      saveThen(function(id){
+        var rr = state.recipes.filter(function(x){ return x.id === id; })[0];
+        if(!rr) return;
+        var res = tidyRecipeLocal(rr);
+        ui.tidy = { recipeId: rr.id, source: "local", after: res, changes: res.changes, loading: false, error: "" };
+        render();
+      });
+    };
+    var vcb = document.getElementById('ver-current-btn');
+    if(vcb) vcb.onclick = function(){ saveThen(function(){ ui.viewOriginalId = null; render(); }); };
+    var vob = document.getElementById('ver-original-btn');
+    if(vob) vob.onclick = function(){ saveThen(function(id){ ui.viewOriginalId = id; render(); }); };
+    var eask = document.getElementById('edit-ask-delete');
+    if(eask) eask.onclick = function(){ syncDraftFromDom(); ui.confirmDeleteId = ui.editingRecipeId; render(); };
+    var ecan = document.getElementById('edit-cancel-delete');
+    if(ecan) ecan.onclick = function(){ syncDraftFromDom(); ui.confirmDeleteId = null; render(); };
+    var econ = document.getElementById('edit-confirm-delete');
+    if(econ) econ.onclick = function(){
+      var id = ui.editingRecipeId;
+      state.recipes = state.recipes.filter(function(x){ return x.id !== id; });
+      ui.openRecipeId = null; ui.confirmDeleteId = null; ui.editingRecipeId = null; ui.showAdd = false; ui.viewOriginalId = null;
+      saveState();
+    };
+
     var saveBtn = document.getElementById('save-recipe-btn');
     if(saveBtn) saveBtn.onclick = function(){
       syncDraftFromDom();
@@ -2929,6 +3005,7 @@ function attachModalHandlers(){
         if(existing){
           var madeSnap2 = snapshotOriginal(existing), beforeCore2 = coreOf(existing);
           existing.title = d.title.trim();
+          existing.time = metaText(d.time); existing.servings = metaText(d.servings);
           existing.cover = d.cover;
           existing.coverIsWebLink = !!d.coverIsWebLink;
           existing.ingredients = cleanIngredients;
@@ -2949,6 +3026,7 @@ function attachModalHandlers(){
         id: uid(),
         createdAt: Date.now(),
         title: d.title.trim(),
+        time: metaText(d.time), servings: metaText(d.servings),
         cover: d.cover,
         ingredients: cleanIngredients,
         steps: cleanSteps,
@@ -2974,12 +3052,13 @@ function extractFromPhotos(){
       return { mediaType: "image/jpeg", base64: dataUrl.split(",")[1] };
     });
     var prompt = "Look at these photo(s) of a recipe or dish. Extract or reconstruct a full recipe. Respond with ONLY valid JSON, no markdown fences, no preamble, in this exact shape:\n" +
-      '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
+      '{"title": "...", "time": "total time e.g. 45 min, or empty if unknown", "servings": "number of portions e.g. 4, or empty if unknown", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
       "If the photo shows a handwritten or printed recipe, transcribe it faithfully. If it shows a finished dish with no text, infer a plausible recipe for that dish. Keep step text concise and actionable.";
     return runAI({ prompt: prompt, images: images, useWebSearch: false });
   }).then(function(text){
     var parsed = parseJsonLoose(text);
     d.title = parsed.title || "";
+    applyMeta(d, parsed);
     d.ingredients = (parsed.ingredients && parsed.ingredients.length) ? parsed.ingredients : [{name:"",amount:"",unit:""}];
     d.steps = (parsed.steps && parsed.steps.length) ? parsed.steps : [""];
     d.tags = parsed.tags || [];
@@ -3002,11 +3081,12 @@ function extractFromUrl(){
   render();
   var prompt = "Find the recipe at this URL (it may be a recipe website or a YouTube video page): " + d.url + "\n" +
     "Search the web if needed to find its content. Then respond with ONLY valid JSON, no markdown fences, no preamble, in this exact shape:\n" +
-    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
+    '{"title": "...", "time": "total time e.g. 45 min, or empty if unknown", "servings": "number of portions e.g. 4, or empty if unknown", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
     "Keep ingredient amounts and units as given by the source where possible. Keep steps concise and actionable.";
   runAI({ prompt: prompt, images: [], useWebSearch: true }).then(function(text){
     var parsed = parseJsonLoose(text);
     d.title = parsed.title || "";
+    applyMeta(d, parsed);
     d.ingredients = (parsed.ingredients && parsed.ingredients.length) ? parsed.ingredients : [{name:"",amount:"",unit:""}];
     d.steps = (parsed.steps && parsed.steps.length) ? parsed.steps : [""];
     d.tags = parsed.tags || [];
@@ -3038,6 +3118,7 @@ function extractFromPhotosLocal(){
   }).then(function(texts){
     var parsed = heuristicParseRecipeText(texts.join("\n\n"));
     d.title = parsed.title || "";
+    applyMeta(d, parsed);
     d.ingredients = parsed.ingredients.length ? parsed.ingredients : [{name:"",amount:"",unit:""}];
     d.steps = parsed.steps.length ? parsed.steps : [""];
     d.cover = d.photoPreviews[0] || null;
@@ -3071,6 +3152,7 @@ function extractFromUrlLocal(){
       if(titleMatch && !parsed.title) parsed.title = titleMatch[1].trim().replace(/\s*[|\u2013-]\s*[^|\u2013-]*$/, '');
     }
     d.title = parsed.title || d.title || "";
+    applyMeta(d, parsed);
     d.ingredients = parsed.ingredients.length ? parsed.ingredients : [{name:"",amount:"",unit:""}];
     d.steps = parsed.steps.length ? parsed.steps : [""];
     if(htmlForMeta && !d.cover){
@@ -3092,6 +3174,7 @@ function extractFromUrlLocal(){
       var recipe = extractRecipeFromHtml(html);
       if(recipe && (recipe.ingredients.length || recipe.steps.length)){
         d.title = recipe.title || d.title;
+        applyMeta(d, recipe);
         d.ingredients = recipe.ingredients.length ? recipe.ingredients : [{name:"",amount:"",unit:""}];
         d.steps = recipe.steps.length ? recipe.steps : [""];
         if(recipe.image && !d.cover){ d.cover = recipe.image; d.coverIsWebLink = true; }
@@ -3171,6 +3254,8 @@ function shareCompact(r){
     s: r.steps || []
   };
   if(r.tags && r.tags.length) o.g = r.tags;
+  if(metaText(r.time)) o.m = metaText(r.time);
+  if(metaText(r.servings)) o.y = metaText(r.servings);
   if(r.originalUrl && /^https?:/i.test(r.originalUrl) && r.originalUrl.length < 400) o.u = r.originalUrl;
   if(r.cover && /^https?:/i.test(r.cover) && r.cover.length < 400) o.c = r.cover;   /* uploaded photos are too big for a link */
   return JSON.stringify(o);
@@ -3268,6 +3353,7 @@ function recipeFromShareJson(o){
   if(!ings.length && !steps.length) return null;
   var cover = (typeof o.c === 'string' && /^https?:/i.test(o.c)) ? o.c : null;
   return { title: o.t.trim() || "Untitled recipe", cover: cover, coverIsWebLink: !!cover, ingredients: ings, steps: steps,
+    time: metaText(o.m), servings: metaText(o.y),
     tags: filterKnownTags(o.g), originalUrl: (typeof o.u === 'string' && /^https?:/i.test(o.u)) ? o.u : undefined };
 }
 function decodeShareToken(tok){
@@ -3337,7 +3423,7 @@ document.addEventListener('keydown', function(e){
 function exportSingleRecipe(r){
   var shareable = {
     recipeBoxShare: true,
-    title: r.title, cover: r.cover, coverIsWebLink: !!r.coverIsWebLink,
+    title: r.title, time: r.time || "", servings: r.servings || "", cover: r.cover, coverIsWebLink: !!r.coverIsWebLink,
     ingredients: r.ingredients || [], steps: r.steps || [],
     tags: r.tags || [], originalUrl: r.originalUrl
   };
@@ -3345,6 +3431,8 @@ function exportSingleRecipe(r){
 }
 function recipeToPlainText(r){
   var lines = [r.title || "Untitled recipe", ""];
+  var mt = [metaText(r.time) ? "Time: " + metaText(r.time) : "", servingsLabel(r.servings)].filter(Boolean).join(" \u00b7 ");
+  if(mt){ lines.push(mt); lines.push(""); }
   lines.push("Ingredients:");
   (r.ingredients||[]).forEach(function(i){
     lines.push("- " + [i.amount, i.unit, i.name].filter(function(x){ return x; }).join(" "));
@@ -3387,6 +3475,7 @@ function extractFromTextLocal(){
     render(); return;
   }
   d.title = parsed.title || d.title || "";
+  applyMeta(d, parsed);
   d.ingredients = parsed.ingredients.length ? parsed.ingredients : [{name:"",amount:"",unit:""}];
   d.steps = parsed.steps.length ? parsed.steps : [""];
   if(parsed.tags && parsed.tags.length) d.tags = parsed.tags;
@@ -3402,7 +3491,7 @@ function extractFromText(){
   d.loading = true; d.error = "";
   render();
   var prompt = "Below is text that contains a recipe (it may be messy: copied from a web page, a message, an email or a caption). Turn it into a clean recipe. Respond with ONLY valid JSON, no markdown fences, no preamble, in this exact shape:\n" +
-    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
+    '{"title": "...", "time": "total time e.g. 45 min, or empty if unknown", "servings": "number of portions e.g. 4, or empty if unknown", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."], "tags": ["choose from: ' + ALL_TAGS.join(", ") + '"]}\n' +
     "Keep amounts and units as written. Drop adverts, comments and unrelated text. Keep steps concise, in order, without numbering.\n\nTEXT:\n" + d.pasteText.slice(0, 12000);
   runAI({ prompt: prompt, images: [], useWebSearch: false }).then(function(text){
     var parsed = parseJsonLoose(text);
@@ -3410,6 +3499,7 @@ function extractFromText(){
     var steps = toStepStrings(parsed && parsed.steps);
     if(!ings.length && !steps.length) throw new Error("no recipe found");
     d.title = (parsed.title || "").toString();
+    applyMeta(d, parsed);
     d.ingredients = ings.length ? ings : [{name:"",amount:"",unit:""}];
     d.steps = steps.length ? steps : [""];
     d.tags = filterKnownTags(parsed.tags);
@@ -3499,6 +3589,7 @@ function genericRecipeFromObject(o){
     cover: cover,
     coverIsWebLink: !!cover && /^https?:/i.test(cover),
     ingredients: ings, steps: steps,
+    time: isoToTime(o.time || o.totalTime || o.cookTime || o.prepTime), servings: yieldText(o.servings || o.recipeYield || o.yield || o.serves || o.portions),
     tags: filterKnownTags(o.tags || o.keywords || o.recipeCategory),
     originalUrl: (typeof src === 'string' && /^https?:/i.test(src)) ? src : undefined
   };
@@ -3551,7 +3642,7 @@ function addImportedRecipes(list){
     if(have[key]){ skipped++; return; }
     have[key] = true; added++;
     state.recipes.unshift({
-      id: uid(), createdAt: Date.now(), title: g.title, cover: g.cover, coverIsWebLink: !!g.coverIsWebLink,
+      id: uid(), createdAt: Date.now(), title: g.title, time: g.time || "", servings: g.servings || "", cover: g.cover, coverIsWebLink: !!g.coverIsWebLink,
       ingredients: g.ingredients, steps: g.steps, tags: g.tags || [], makePhotos: [], originalUrl: g.originalUrl
     });
   });
@@ -3559,7 +3650,7 @@ function addImportedRecipes(list){
 }
 function loadRecipeIntoForm(g){
   var d = ui.draft;
-  d.title = g.title; d.cover = g.cover; d.coverIsWebLink = !!g.coverIsWebLink;
+  d.title = g.title; d.time = g.time || ""; d.servings = g.servings || ""; d.cover = g.cover; d.coverIsWebLink = !!g.coverIsWebLink;
   d.ingredients = g.ingredients.length ? g.ingredients : [{name:"",amount:"",unit:""}];
   d.steps = g.steps.length ? g.steps : [""];
   d.tags = (g.tags || []).slice();
