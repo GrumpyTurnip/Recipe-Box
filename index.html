@@ -1005,6 +1005,22 @@ function formatAmountNum(n){
 }
 function tidyText(t){ return String(t == null ? "" : t).replace(/\s+/g, ' ').trim(); }
 
+function minutesToText(m){
+  m = Math.round(m);
+  var h = Math.floor(m / 60), mm = m % 60;
+  return (h ? h + ' hr' + (mm ? ' ' : '') : '') + (mm ? mm + ' min' : '');
+}
+function estimateTimeFromSteps(steps){
+  var total = 0, found = 0;
+  (steps || []).forEach(function(st){
+    var re = /(\d+(?:\.\d+)?)(?:\s*(?:-|\u2013|to)\s*(\d+(?:\.\d+)?))?\s*(hours?|hrs?|minutes?|mins?)\b/gi, m;
+    while((m = re.exec(String(st)))){
+      var v = parseFloat(m[2] || m[1]);
+      total += /^h/i.test(m[3]) ? v * 60 : v; found++;
+    }
+  });
+  return (found && total > 0 && total <= 24 * 60) ? total : 0;
+}
 function tidyRecipeLocal(rec){
   var changes = [];
   var title = tidyText(rec.title);
@@ -1090,7 +1106,17 @@ function tidyRecipeLocal(rec){
   if(punct || caps) changes.push('Tidied punctuation and capitals in the method');
 
   var tags = (rec.tags || []).filter(function(t, i, a){ return a.indexOf(t) === i; });
-  return { title: title, ingredients: out, steps: finalSteps, tags: tags, changes: changes };
+  var time = metaText(rec.time), servings = metaText(rec.servings);
+  if(!time || !servings){
+    var fm = extractMetaFromText([title, finalSteps.join('\n')].join('\n'));
+    if(!servings && fm.servings){ servings = fm.servings; changes.push('Added portions: ' + servingsLabel(servings) + ' (found in the text)'); }
+    if(!time && fm.time){ time = fm.time; changes.push('Added time: ' + time + ' (found in the text)'); }
+    if(!time){
+      var est = estimateTimeFromSteps(finalSteps);
+      if(est){ time = '~' + minutesToText(est); changes.push('Added time: about ' + minutesToText(est) + ' \u2014 estimated by adding up the timings in the steps (check it)'); }
+    }
+  }
+  return { title: title, ingredients: out, steps: finalSteps, tags: tags, time: time, servings: servings, changes: changes };
 }
 
 function generateTidyAI(rec){
@@ -1105,13 +1131,14 @@ function generateTidyAI(rec){
     "\n" +
     "Title: " + rec.title + "\nIngredients:\n" + ing + "\nSteps:\n" + stepsPromptList(rec) + "\n\n" +
     "Respond with ONLY valid JSON, no markdown fences, no preamble: " +
-    '{"title": "...", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."]}';
+    '{"title": "...", "time": "total time e.g. 45 min (use what the recipe says, otherwise a sensible estimate; empty if unknowable)", "servings": "number of portions e.g. 4 (use what the recipe says, otherwise a sensible estimate; empty if unknowable)", "ingredients": [{"name":"...","amount":"...","unit":"..."}], "steps": ["...","..."]}';
   return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 3500 }).then(function(text){
     var p = parseJsonLoose(text);
     var ings = ((p && p.ingredients) || []).map(toIngredientObj).filter(Boolean);
     var steps = stripBakedQuantities(toStepStrings(p && p.steps), ings.length ? ings : rec.ingredients).steps;
     if(!ings.length && !steps.length) throw new Error("The tidy-up came back empty \u2014 please try again.");
-    return { title: (p.title || rec.title || "").toString(), ingredients: ings, steps: steps, tags: rec.tags || [] };
+    return { title: (p.title || rec.title || "").toString(), ingredients: ings, steps: steps, tags: rec.tags || [],
+      time: metaText(rec.time) || isoToTime(p.time), servings: metaText(rec.servings) || yieldText(p.servings) };
   });
 }
 
@@ -1933,6 +1960,13 @@ function renderTidyModal(){
   if(changed){
     html += '<div class="card-block tidy-after"><h4>After</h4>';
     if(a.title !== r.title) html += '<div style="font-family:var(--font-serif);font-size:18px;margin-bottom:6px;">' + esc(a.title) + '</div>';
+    var newT = (a.time || '') !== (r.time || ''), newS = (a.servings || '') !== (r.servings || '');
+    if(newT || newS){
+      html += '<div style="margin-bottom:8px;">';
+      if(newT) html += '<span class="meta-chip">\u23f1 ' + esc(a.time) + ' (new)</span>';
+      if(newS) html += '<span class="meta-chip">\ud83c\udf7d ' + esc(servingsLabel(a.servings)) + ' (new)</span>';
+      html += '</div>';
+    }
     html += '<strong>Ingredients</strong><ul>';
     a.ingredients.forEach(function(i){ html += '<li>' + esc([i.amount, i.unit, i.name].filter(Boolean).join(' ')) + '</li>'; });
     var showQ = ui.detailQuantitiesOverride !== null ? ui.detailQuantitiesOverride : state.settings.showQuantities;
@@ -2131,15 +2165,52 @@ function renderRecipeDetail(r){
 }
 
 /* ---------- pantry / shopping ---------- */
+/* ---------- smarter pantry matching ---------- */
+var PANTRY_PREP = ['finely','roughly','thinly','coarsely','freshly','lightly','thickly','chopped','diced','sliced','minced','grated','crushed','peeled','shredded','cubed','halved','quartered','trimmed','melted','softened','beaten','drained','rinsed','washed','cooked','uncooked','fresh','dried','frozen','tinned','canned','large','small','medium','big','ripe','raw','whole','optional','handful','pinch','bunch','sprig','sprigs','clove','cloves','knob','stick','sticks','good','quality','of','a','the','some','about','roughly','skinned','deseeded','seeded','pitted','boneless','skinless','plus','more','to','serve','taste','for','garnish','packed','level','heaped','heaping'];
+var PANTRY_VARIETY_HEADS = ['onion','potato','tomato','apple','garlic','mushroom','carrot','cabbage','lettuce','chilli','chili','shallot'];
+var PANTRY_VARIETY_WORDS = ['red','white','brown','yellow','purple','golden','spanish','new','baby','vine','cherry','plum','chestnut','button'];
+function pantrySingular(w){
+  if(w.length > 4 && /ies$/.test(w)) return w.slice(0, -3) + 'y';
+  if(w.length > 4 && /oes$/.test(w)) return w.slice(0, -2);
+  if(w.length > 3 && /s$/.test(w) && !/(ss|us|is)$/.test(w)) return w.slice(0, -1);
+  return w;
+}
+/* "Red onion, finely chopped" -> { clean: "red onion", core: "onion" } */
+function pantryNames(name){
+  var t = String(name || '').toLowerCase().replace(/\([^)]*\)/g, ' ').split(/[,;]/)[0].replace(/[^a-z\u00e0-\u00ff\s'-]/g, ' ');
+  var words = t.split(/\s+/).filter(Boolean);
+  var kept = words.filter(function(w){ return PANTRY_PREP.indexOf(w) === -1; });
+  if(!kept.length) kept = words;
+  var clean = kept.join(' ').trim();
+  var cw = kept.map(pantrySingular);
+  var head = cw[cw.length - 1];
+  var core = cw;
+  if(PANTRY_VARIETY_HEADS.indexOf(head) > -1) core = cw.filter(function(w, i){ return i === cw.length - 1 || PANTRY_VARIETY_WORDS.indexOf(w) === -1; });
+  return { clean: clean, core: core.join(' ').trim() };
+}
+function pantryNiceName(name){ var c = pantryNames(name).clean; return c ? c.charAt(0).toUpperCase() + c.slice(1) : String(name || '').trim(); }
+function findPantryMatch(name){
+  var core = pantryNames(name).core;
+  if(!core) return null;
+  for(var i = 0; i < state.pantry.length; i++){ if(pantryNames(state.pantry[i].name).core === core) return state.pantry[i]; }
+  return null;
+}
+function pantryDuplicateCount(){
+  var seen = {}, dups = 0;
+  state.pantry.forEach(function(p){ var c = pantryNames(p.name).core; if(!c) return; if(seen[c]) dups++; else seen[c] = 1; });
+  return dups;
+}
+
 function renderPantry(){
-  var html = '<div class="two-col">';
+  var html = '';
+  if(ui.pantryNote){ html += '<div class="orig-banner" style="margin-bottom:14px;" id="pantry-note">' + esc(ui.pantryNote) + '</div>'; }
+  html += '<div class="two-col">';
   html += '<div class="card-block"><h4>Shopping list</h4>';
   if(state.shopping.length === 0){
     html += '<p style="font-size:13px;color:var(--ink-soft);">Nothing on your list. Add ingredients from a recipe, or type below.</p>';
   }
   state.shopping.forEach(function(item){
-    var lname = item.name.toLowerCase();
-    var inPantry = state.pantry.some(function(p){ return lname.indexOf(p.name.toLowerCase()) > -1; });
+    var inPantry = !!findPantryMatch(item.name);
     html += '<div class="list-item' + (item.checked?" checked":"") + '">';
     html += '<input type="checkbox" data-shop-toggle="' + item.id + '" ' + (item.checked?"checked":"") + '>';
     html += '<span>' + esc(item.name) + '</span>';
@@ -2158,6 +2229,8 @@ function renderPantry(){
   state.pantry.forEach(function(item){
     html += '<div class="list-item"><span>' + esc(item.name) + '</span><button class="small-x" style="margin-left:auto;" data-pantry-remove="' + item.id + '">&times;</button></div>';
   });
+  var dupCount = pantryDuplicateCount();
+  if(dupCount) html += '<div style="margin-top:10px;"><button class="btn btn-accent btn-sm" id="pantry-merge-btn">Merge ' + dupCount + ' duplicate' + (dupCount === 1 ? '' : 's') + '</button></div>';
   html += '<div class="list-row" style="margin-top:12px;">';
   html += '<input type="text" id="pantry-input" placeholder="Add pantry item...">';
   html += '<button class="btn btn-sm btn-primary" id="pantry-add-btn">Add</button></div></div>';
@@ -2413,7 +2486,7 @@ function attachHandlers(){
 
   var tabBtns = document.querySelectorAll('.tab-btn');
   tabBtns.forEach(function(btn){
-    btn.onclick = function(){ ui.tab = btn.getAttribute('data-tab'); ui.openRecipeId = null; render(); };
+    btn.onclick = function(){ ui.tab = btn.getAttribute('data-tab'); ui.openRecipeId = null; ui.pantryNote = ''; render(); };
   });
 
   if(ui.tab === "recipes"){
@@ -2469,6 +2542,8 @@ function attachOverlayHandlers(){
       rr.ingredients = t.after.ingredients;
       rr.steps = t.after.steps;
       if(t.after.tags) rr.tags = t.after.tags;
+      if(t.after.time && !rr.time) rr.time = t.after.time;
+      if(t.after.servings && !rr.servings) rr.servings = t.after.servings;
       rr.stepsQuick = null; rr.stepsGuided = null;
       dropOriginalIfUnchanged(rr, madeSnap, beforeCore);
     }
@@ -2644,14 +2719,19 @@ function attachPantryHandlers(){
     };
   });
   function moveToPantry(ids){
-    var have = {};
-    state.pantry.forEach(function(p){ have[p.name.trim().toLowerCase()] = true; });
+    var moved = [], already = [];
     state.shopping.forEach(function(i){
       if(ids.indexOf(i.id) === -1) return;
-      var k = i.name.trim().toLowerCase();
-      if(k && !have[k]){ state.pantry.push({ id: uid(), name: i.name.trim() }); have[k] = true; }
+      var match = findPantryMatch(i.name);
+      if(match){ already.push(pantryNiceName(i.name).toLowerCase() + (pantryNames(i.name).core !== pantryNames(i.name).clean ? ' (you already have ' + match.name.toLowerCase() + ')' : '')); return; }
+      var nice = pantryNiceName(i.name);
+      if(nice) { state.pantry.push({ id: uid(), name: nice }); moved.push(nice.toLowerCase()); }
     });
     state.shopping = state.shopping.filter(function(i){ return ids.indexOf(i.id) === -1; });
+    var note = '';
+    if(moved.length) note += 'Added to pantry: ' + moved.join(', ') + '.';
+    if(already.length) note += (note ? ' ' : '') + 'Already in your pantry, so not added again: ' + already.join(', ') + '.';
+    ui.pantryNote = note;
     saveState();
   }
   document.querySelectorAll('[data-shop-to-pantry]').forEach(function(btn){
@@ -2680,9 +2760,25 @@ function attachPantryHandlers(){
   if(shopInput) shopInput.onkeydown = function(e){ if(e.key==='Enter') addShop(); };
 
   var pantryAddBtn = document.getElementById('pantry-add-btn');
+  var mergeBtn = document.getElementById('pantry-merge-btn');
+  if(mergeBtn) mergeBtn.onclick = function(){
+    var seen = {}, kept = [], removed = [];
+    state.pantry.forEach(function(p){
+      var c = pantryNames(p.name).core;
+      if(c && seen[c]){ removed.push(p.name); return; }
+      if(c) seen[c] = true;
+      kept.push(p);
+    });
+    state.pantry = kept;
+    ui.pantryNote = 'Merged duplicates \u2014 removed: ' + removed.join(', ') + '.';
+    saveState();
+  };
   var pantryInput = document.getElementById('pantry-input');
   function addPantry(){
     if(pantryInput && pantryInput.value.trim()){
+      var match = findPantryMatch(pantryInput.value);
+      if(match){ ui.pantryNote = 'You already have \u201c' + match.name + '\u201d in your pantry, so I didn\u2019t add \u201c' + pantryInput.value.trim() + '\u201d again.'; render(); return; }
+      ui.pantryNote = '';
       state.pantry.push({id:uid(), name:pantryInput.value.trim()});
       saveState();
     }
@@ -2950,8 +3046,10 @@ function attachModalHandlers(){
     var tidyDraftBtn = document.getElementById('tidy-draft-btn');
     if(tidyDraftBtn) tidyDraftBtn.onclick = function(){
       syncDraftFromDom();
-      var res = tidyRecipeLocal({ title: d.title, ingredients: d.ingredients, steps: d.steps, tags: d.tags });
+      var res = tidyRecipeLocal({ title: d.title, ingredients: d.ingredients, steps: d.steps, tags: d.tags, time: d.time, servings: d.servings });
       d.title = res.title;
+      if(res.time && !d.time) d.time = res.time;
+      if(res.servings && !d.servings) d.servings = res.servings;
       d.ingredients = res.ingredients.length ? res.ingredients : [{name:"",amount:"",unit:""}];
       d.steps = res.steps.length ? res.steps : [""];
       d.tags = res.tags;
