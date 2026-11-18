@@ -131,7 +131,7 @@
   .photo-strip{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .photo-strip img{width:80px;height:80px;object-fit:cover;border-radius:5px;border:1px solid var(--line);}
 
-  .overlay{position:fixed;inset:0;background:rgba(46,33,21,0.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50;}
+  .overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(46,33,21,0.45);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50;}
   .modal{background:var(--card);border-radius:10px;max-width:640px;width:100%;padding:26px 26px 22px;box-shadow:var(--shadow);}
   .modal h3{font-family:var(--font-serif);font-size:22px;margin:0 0 16px;}
   .modal-close{float:right;background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-soft);}
@@ -178,6 +178,25 @@
   .to-pantry{margin-left:auto;white-space:nowrap;}
   .to-pantry + .small-x{margin-left:6px;}
   .detail-meta{margin:2px 0 8px;}
+  /* older Safari (iOS < 14.5) has no flex "gap": give flex children margins instead */
+  html.no-flex-gap header.top > *, html.no-flex-gap .brand > *, html.no-flex-gap .top-actions > *, html.no-flex-gap nav.tabs > *,
+  html.no-flex-gap .toolbar > *, html.no-flex-gap .chip-row > *, html.no-flex-gap .rcard .meta > *, html.no-flex-gap .detail-header > *,
+  html.no-flex-gap .steps-list li > *, html.no-flex-gap .photo-strip > *, html.no-flex-gap .list-row > *, html.no-flex-gap .add-mode-tabs > *,
+  html.no-flex-gap .thumbs > *, html.no-flex-gap .status-line > *, html.no-flex-gap .list-item > *, html.no-flex-gap .orig-banner > *,
+  html.no-flex-gap .step-row > *, html.no-flex-gap .reorder > *, html.no-flex-gap .method-bar .mb-top > *, html.no-flex-gap .timing-strip > *,
+  html.no-flex-gap .btn > *, html.no-flex-gap [style*="gap:"] > *{margin-right:6px;margin-bottom:6px;}
+  html.no-flex-gap .mv-col > *{margin-bottom:2px;margin-right:0;}
+  .reader-bar{position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--card);border-top:2px solid var(--ink);box-shadow:0 -4px 14px rgba(46,33,21,0.18);padding:10px 14px 12px;padding-bottom:calc(12px + env(safe-area-inset-bottom));}
+  .reader-bar .rb-inner{max-width:1000px;margin:0 auto;}
+  .reader-bar .rb-now{font-size:13px;margin-bottom:8px;line-height:1.35;}
+  .reader-bar .rb-now small{color:var(--ink-soft);display:block;font-size:11px;}
+  .reader-bar .btn{margin:0 5px 6px 0;padding:7px 10px;font-size:13px;}
+  .reader-bar label{display:inline-block;font-size:12px;margin:0 12px 2px 0;white-space:nowrap;}
+  .reader-bar input[type=checkbox]{width:auto;display:inline-block;margin:0 6px 0 0;vertical-align:middle;}
+  .reader-bar select{width:auto;display:inline-block;font-size:12px;padding:3px 6px;}
+  .reading-now{background:#fff3cf;box-shadow:-6px 0 0 #fff3cf,6px 0 0 #fff3cf;border-radius:4px;}
+  .ing-row.reading-now{box-shadow:none;}
+  body.reading-pad{padding-bottom:150px;}
   .meta-chip{display:inline-block;font-size:12px;color:var(--ink-soft);background:var(--paper-2, #f1ece3);border-radius:999px;padding:2px 10px;margin:0 6px 6px 0;white-space:nowrap;}
   .rcard .meta-chip{font-size:11px;padding:1px 8px;margin:0 4px 4px 0;}
   .more-opts{margin-top:18px;padding-top:12px;border-top:1px solid var(--line, #ddd);}
@@ -202,6 +221,7 @@
   .nl-line{border-bottom:1.2px dotted #555;height:9mm;}
   .nl-label{font-size:11px;font-style:italic;color:var(--ink-soft);margin-top:10px;}
   @media print{
+    .reader-bar{display:none !important;}
     html,body{background:#fff !important;}
     header.top,nav.tabs,.back-link,.btn,label.btn,.menu-wrap,.method-bar,.overlay,.banner,.status-line,.no-print{display:none !important;}
     .print-only{display:block !important;}
@@ -215,7 +235,8 @@
   .menu-wrap{position:relative;display:inline-block;}
   .menu{position:absolute;left:0;top:calc(100% + 6px);min-width:250px;max-width:min(320px,calc(100vw - 28px));background:var(--card);border:1.5px solid var(--ink);border-radius:9px;box-shadow:var(--shadow);z-index:30;padding:5px;}
   .menu-item{display:block;width:100%;text-align:left;background:none;border:none;padding:9px 11px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer;border-radius:6px;}
-  .menu-item:hover,.menu-item:focus-visible{background:var(--paper);outline:none;}
+  .menu-item:hover{background:var(--paper);outline:none;}
+  .menu-item:focus-visible{background:var(--paper);outline:none;}
   .menu-item small{display:block;font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:1px;}
   .cover-preview{width:100%;max-height:260px;object-fit:cover;border-radius:8px;display:block;margin:6px 0 12px;background:var(--paper);min-height:120px;}
   .method-bar{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px;}
@@ -1414,22 +1435,42 @@ function friendlySyncError(err){
 }
 
 var firebaseSdkPromise = null;
+var FIREBASE_LEGACY_VERSION = "8.10.1";   /* plain-ES5 build: works on old iPads/iPhones (iOS 9\u201310) */
+function firebaseReady(){ return !!(window.firebase && window.firebase.initializeApp && window.firebase.auth && window.firebase.firestore); }
 function loadFirebaseSdk(){
-  if(window.firebase && window.firebase.auth && window.firebase.firestore) return Promise.resolve();
+  if(firebaseReady()) return Promise.resolve();
   if(firebaseSdkPromise) return firebaseSdkPromise;
-  var base = "https://www.gstatic.com/firebasejs/" + FIREBASE_VERSION + "/";
-  function load(file){
+  function load(base, file){
     return new Promise(function(resolve, reject){
       var s = document.createElement('script');
       s.src = base + file;
       s.onload = function(){ resolve(); };
-      s.onerror = function(){ reject(new Error("Couldn’t load Firebase from Google’s servers. You may be offline, or this page is running somewhere that only allows approved sites (like Claude’s preview).")); };
+      s.onerror = function(){ reject(new Error("Couldn\u2019t load Firebase from Google\u2019s servers. You may be offline, or this page is running somewhere that only allows approved sites (like Claude\u2019s preview). Open Recipe Box from its web address instead.")); };
       document.head.appendChild(s);
     });
   }
-  firebaseSdkPromise = load("firebase-app-compat.js").then(function(){
-    return Promise.all([load("firebase-auth-compat.js"), load("firebase-firestore-compat.js")]);
-  }).catch(function(e){ firebaseSdkPromise = null; throw e; });
+  function tryVersion(ver, files){
+    var base = "https://www.gstatic.com/firebasejs/" + ver + "/";
+    return load(base, files[0]).then(function(){
+      return Promise.all([load(base, files[1]), load(base, files[2])]);
+    }).then(function(){
+      if(!firebaseReady()) throw new Error("This browser couldn\u2019t run the sync library.");
+    });
+  }
+  var modern = ["firebase-app-compat.js", "firebase-auth-compat.js", "firebase-firestore-compat.js"];
+  var legacy = ["firebase-app.js", "firebase-auth.js", "firebase-firestore.js"];
+  var preferLegacy = false;
+  try{ preferLegacy = localStorage.getItem('recipe-box-fb-legacy') === '1'; }catch(e){}
+  function useLegacy(){
+    try{ window.firebase = undefined; }catch(e){}
+    return tryVersion(FIREBASE_LEGACY_VERSION, legacy).then(function(){
+      try{ localStorage.setItem('recipe-box-fb-legacy', '1'); }catch(e){}
+    });
+  }
+  /* Newer browsers use the current library; if it can't run (older Safari on iOS 9\u201310 loads it but it
+     silently fails to start), fall back to the older ES5 build and remember that for next time. */
+  firebaseSdkPromise = (preferLegacy ? useLegacy() : tryVersion(FIREBASE_VERSION, modern).catch(useLegacy))
+    .catch(function(e){ firebaseSdkPromise = null; throw e; });
   return firebaseSdkPromise;
 }
 
@@ -1884,6 +1925,7 @@ function renderApp(){
   html += '<button class="tab-btn' + (ui.tab==="settings"?" active":"") + '" data-tab="settings">Settings</button>';
   html += '</nav>';
 
+  if(ui.reader && (ui.tab !== "recipes" || ui.reader.recipeId !== ui.openRecipeId)){ readerStop(true); }
   if(ui.tab === "recipes"){
     var openRecipe = state.recipes.find(function(r){ return r.id === ui.openRecipeId; });
     html += openRecipe ? renderRecipeDetail(openRecipe) : renderRecipeList();
@@ -1893,6 +1935,7 @@ function renderApp(){
     html += renderSettings();
   }
 
+  html += renderReaderBar();
   html += '<footer class="tip">Everything here lives in your browser and can be downloaded anytime as a backup file.</footer>';
 
   if(ui.showAdd){
@@ -2053,6 +2096,187 @@ function renderRecipeList(){
 }
 
 /* ---------- recipe detail ---------- */
+/* ---------- read aloud (text-to-speech) ---------- */
+var readerToken = 0;
+function speechSupported(){ try{ return !!(window.speechSynthesis && window.SpeechSynthesisUtterance); }catch(e){ return false; } }
+function loadReadPrefs(){
+  try{
+    var o = JSON.parse(localStorage.getItem('recipe-box-read') || '{}');
+    ui.readStopEach = !!o.stopEach; ui.readRate = o.rate || 1;
+  }catch(e){ ui.readStopEach = false; ui.readRate = 1; }
+}
+function saveReadPrefs(){ try{ localStorage.setItem('recipe-box-read', JSON.stringify({ stopEach: !!ui.readStopEach, rate: ui.readRate || 1 })); }catch(e){} }
+function speakFriendly(text){
+  var t = String(text || '');
+  t = t.replace(/(\d)\s*½/g, '$1 and a half').replace(/½/g, 'a half')
+       .replace(/(\d)\s*¼/g, '$1 and a quarter').replace(/¼/g, 'a quarter')
+       .replace(/(\d)\s*¾/g, '$1 and three quarters').replace(/¾/g, 'three quarters')
+       .replace(/⅓/g, 'a third').replace(/⅔/g, 'two thirds');
+  t = t.replace(/(\d+)\s+1\/2\b/g, '$1 and a half').replace(/(\d+)\s+1\/4\b/g, '$1 and a quarter').replace(/(\d+)\s+3\/4\b/g, '$1 and three quarters')
+       .replace(/\b1\/2\b/g, 'a half').replace(/\b1\/4\b/g, 'a quarter').replace(/\b3\/4\b/g, 'three quarters').replace(/\b1\/3\b/g, 'a third').replace(/\b2\/3\b/g, 'two thirds');
+  t = t.replace(/(\d+)\s*°\s*C\b/g, '$1 degrees Celsius').replace(/(\d+)\s*°\s*F\b/g, '$1 degrees Fahrenheit').replace(/(\d+)\s*°/g, '$1 degrees');
+  t = t.replace(/(\d)\s*[-–]\s*(\d)/g, '$1 to $2');
+  var units = { kg: 'kilograms', g: 'grams', ml: 'millilitres', l: 'litres', tbsp: 'tablespoons', tsp: 'teaspoons', oz: 'ounces', lb: 'pounds', lbs: 'pounds', mins: 'minutes', min: 'minutes', hrs: 'hours', hr: 'hours' };
+  t = t.replace(/(\d|half|quarter|quarters|third|thirds)\s*(kg|g|ml|l|tbsp|tsp|oz|lbs|lb|mins|min|hrs|hr)\b/gi, function(m, n, u){ return n + ' ' + units[u.toLowerCase()]; });
+  t = t.replace(/\b(half|quarter|third) (grams|kilograms|millilitres|litres|tablespoons|teaspoons|ounces|pounds)\b/g, function(m, f, u){ return f + ' ' + u.replace(/s$/, ''); });
+  t = t.replace(/\b1 (grams|kilograms|millilitres|litres|tablespoons|teaspoons|ounces|pounds|minutes|hours)\b/g, function(m, u){ return '1 ' + u.replace(/s$/, ''); });
+  t = t.replace(/\s*[()]\s*/g, ', ').replace(/\s+/g, ' ').replace(/,\s*([.,])/g, '$1').trim();
+  return t;
+}
+function speechChunks(text){
+  var parts = String(text).match(/[^.!?;:]+[.!?;:]*\s*/g) || [String(text)];
+  var out = [], cur = '';
+  parts.forEach(function(p){
+    if((cur + p).length > 160 && cur){ out.push(cur.trim()); cur = p; } else cur += p;
+  });
+  if(cur.trim()) out.push(cur.trim());
+  return out;
+}
+function buildReaderItems(which){
+  var items = [];
+  function add(kind, label, text, extra){
+    var it = { kind: kind, label: label, text: text, chunks: speechChunks(speakFriendly(text)) };
+    for(var k in extra) it[k] = extra[k];
+    items.push(it);
+  }
+  if(which === 'ingredients' || which === 'all'){
+    var rows = document.querySelectorAll('.ing-row');
+    if(rows.length) add('intro', 'Ingredients', 'Ingredients.', {});
+    Array.prototype.forEach.call(rows, function(row, i){
+      var sp = row.querySelectorAll('span');
+      var name = sp[0] ? sp[0].textContent.replace(/\s+/g, ' ').trim() : '';
+      var amt = sp[1] ? sp[1].textContent.replace(/\s+/g, ' ').trim() : '';
+      if(name || amt) add('ing', 'Ingredient ' + (i + 1) + ' of ' + rows.length, (amt ? amt + ' ' : '') + name + '.', { ingIdx: i });
+    });
+  }
+  if(which === 'method' || which === 'all'){
+    var lis = document.querySelectorAll('.steps-list li');
+    if(lis.length && which === 'all') add('intro', 'Method', 'Method.', {});
+    Array.prototype.forEach.call(lis, function(li, i){
+      var sp = li.querySelectorAll('span');
+      var body = sp[1] ? sp[1].textContent.replace(/\s+/g, ' ').trim() : li.textContent.trim();
+      if(body) add('step', 'Step ' + (i + 1) + ' of ' + lis.length, 'Step ' + (i + 1) + '. ' + body, { stepIdx: i });
+    });
+  }
+  return items;
+}
+function readerCancelSpeech(){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+function readerStop(noRender){
+  readerToken++;
+  readerCancelSpeech();
+  ui.reader = null;
+  if(!noRender) render();
+}
+function readerReveal(){
+  var el = document.querySelector('.reading-now');
+  if(!el) return;
+  var rect = el.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
+  if(rect.top < 70 || rect.bottom > vh - 150){
+    window.scrollTo(0, Math.max(0, (window.pageYOffset || 0) + rect.top - Math.round(vh / 3)));
+  }
+}
+function readerPickVoice(u){
+  u.lang = 'en-GB';
+  try{
+    var vs = window.speechSynthesis.getVoices() || [], pick = null;
+    for(var i = 0; i < vs.length && !pick; i++) if(/^en[-_]GB/i.test(vs[i].lang)) pick = vs[i];
+    for(var j = 0; j < vs.length && !pick; j++) if(/^en/i.test(vs[j].lang)) pick = vs[j];
+    if(pick) u.voice = pick;
+  }catch(e){}
+}
+function readerPlay(){
+  var r = ui.reader;
+  if(!r) return;
+  var it = r.items[r.index];
+  if(!it){ readerStop(); return; }
+  r.paused = false; r.waiting = false;
+  var tok = ++readerToken; r.token = tok;
+  if(r.chunk >= it.chunks.length){ readerItemDone(); return; }
+  var u = new SpeechSynthesisUtterance(it.chunks[r.chunk]);
+  readerPickVoice(u);
+  u.rate = ui.readRate || 1;
+  u.onend = function(){
+    if(!ui.reader || ui.reader.token !== tok) return;
+    ui.reader.chunk++;
+    readerPlay();
+  };
+  u.onerror = function(ev){
+    if(!ui.reader || ui.reader.token !== tok) return;
+    if(ev && (ev.error === 'interrupted' || ev.error === 'canceled')) return;
+    readerStop();
+  };
+  var go = function(){ try{ window.speechSynthesis.speak(u); }catch(e){ readerStop(); } };
+  var ss = window.speechSynthesis;
+  if(ss.speaking || ss.pending){ ss.cancel(); setTimeout(function(){ if(ui.reader && ui.reader.token === tok) go(); }, 90); }
+  else go();
+}
+function readerItemDone(){
+  var r = ui.reader;
+  if(!r) return;
+  var it = r.items[r.index], last = r.index >= r.items.length - 1;
+  if(last){ readerStop(); return; }
+  if(it.kind === 'step' && ui.readStopEach){ r.waiting = true; r.token = ++readerToken; render(); return; }
+  readerGo(r.index + 1);
+}
+function readerGo(i){
+  var r = ui.reader;
+  if(!r) return;
+  if(i < 0) i = 0;
+  if(i > r.items.length - 1){ readerStop(); return; }
+  r.index = i; r.chunk = 0; r.waiting = false; r.paused = false;
+  render(); readerReveal();
+  readerPlay();
+}
+function readerStart(which){
+  if(!speechSupported()){ alert("This browser can’t read text aloud."); return; }
+  var items = buildReaderItems(which);
+  if(!items.length){ alert("There’s nothing to read yet."); return; }
+  readerToken++; readerCancelSpeech();
+  ui.reader = { recipeId: ui.openRecipeId, items: items, index: 0, chunk: 0, paused: false, waiting: false, token: 0 };
+  readerPlay();
+  render(); readerReveal();
+}
+function renderReaderBar(){
+  var r = ui.reader;
+  if(!r || ui.tab !== 'recipes' || r.recipeId !== ui.openRecipeId) return '';
+  var it = r.items[r.index] || {};
+  var status = r.paused ? 'Paused' : (r.waiting ? 'Step finished — tap “Next step” when you’re ready' : 'Reading aloud…');
+  var html = '<div class="reader-bar no-print" id="reader-bar"><div class="rb-inner">';
+  html += '<div class="rb-now"><strong>' + esc(it.label || '') + '</strong><small>' + esc(status) + '</small></div>';
+  html += '<div>';
+  html += '<button class="btn btn-ghost btn-sm" id="rd-prev">⏮ Back</button>';
+  if(r.waiting) html += '<button class="btn btn-primary btn-sm" id="rd-next">Next step ▶</button>';
+  else {
+    html += '<button class="btn btn-primary btn-sm" id="rd-pause">' + (r.paused ? '▶ Resume' : '⏸ Pause') + '</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="rd-next">Next ⏭</button>';
+  }
+  html += '<button class="btn btn-ghost btn-sm" id="rd-repeat" title="Say this again" aria-label="Repeat">↺</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="rd-stop">■ Stop</button>';
+  html += '</div><div>';
+  html += '<label><input type="checkbox" id="rd-stopeach"' + (ui.readStopEach ? ' checked' : '') + '> Stop after each step</label>';
+  html += '<label>Speed <select id="rd-rate">';
+  [[0.8, 'Slower'], [1, 'Normal'], [1.2, 'Faster'], [1.4, 'Fastest']].forEach(function(o){ html += '<option value="' + o[0] + '"' + (Math.abs((ui.readRate || 1) - o[0]) < 0.01 ? ' selected' : '') + '>' + o[1] + '</option>'; });
+  html += '</select></label></div>';
+  html += '</div></div><div style="height:130px;" class="no-print"></div>';
+  return html;
+}
+function attachReaderHandlers(){
+  function on(id, fn){ var el = document.getElementById(id); if(el) el.onclick = fn; }
+  on('rd-stop', function(){ readerStop(); });
+  on('rd-prev', function(){ var r = ui.reader; if(r) readerGo(r.index - 1); });
+  on('rd-next', function(){ var r = ui.reader; if(r) readerGo(r.index + 1); });
+  on('rd-repeat', function(){ var r = ui.reader; if(r){ r.chunk = 0; r.waiting = false; render(); readerPlay(); } });
+  on('rd-pause', function(){
+    var r = ui.reader; if(!r) return;
+    if(r.paused){ render(); readerPlay(); }
+    else { r.paused = true; r.token = ++readerToken; readerCancelSpeech(); render(); }
+  });
+  var se = document.getElementById('rd-stopeach');
+  if(se) se.onchange = function(){ ui.readStopEach = se.checked; saveReadPrefs(); };
+  var rt = document.getElementById('rd-rate');
+  if(rt) rt.onchange = function(){ ui.readRate = parseFloat(rt.value) || 1; saveReadPrefs(); var r = ui.reader; if(r && !r.paused && !r.waiting){ render(); readerPlay(); } };
+}
+
 function renderRecipeDetail(r){
   var origMode = !!(r.original && ui.viewOriginalId === r.id);
   if(origMode){
@@ -2079,6 +2303,20 @@ function renderRecipeDetail(r){
   html += '<label class="btn btn-ghost btn-sm" style="cursor:pointer;">Upload photo of your make<input type="file" accept="image/*" id="make-photo-input" style="display:none;"></label>';
   html += '<button class="btn btn-ghost btn-sm" id="toggle-quantities">Quantities in method: ' + (showQty ? "on" : "off") + '</button>';
   if(!r.cover) html += '<button class="btn btn-ghost btn-sm" id="find-cover-btn">Find a picture</button>';
+  html += '<div class="menu-wrap"><button class="btn btn-ghost btn-sm" id="read-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.readMenu ? 'true' : 'false') + '">\ud83d\udd0a Read aloud \u25be</button>';
+  if(ui.readMenu){
+    html += '<div class="menu" role="menu">';
+    if(speechSupported()){
+      html += '<button class="menu-item" role="menuitem" id="rd-start-ing">Ingredients<small>Reads each ingredient out</small></button>';
+      html += '<button class="menu-item" role="menuitem" id="rd-start-method">Method<small>Reads the steps one after another</small></button>';
+      html += '<button class="menu-item" role="menuitem" id="rd-start-all">Ingredients, then method</button>';
+      html += '<label class="menu-item" style="display:block;cursor:pointer;"><input type="checkbox" id="rd-stopeach-menu"' + (ui.readStopEach ? ' checked' : '') + '> Stop after each step<small>Waits for you to tap \u201cNext step\u201d</small></label>';
+    } else {
+      html += '<p style="font-size:12px;margin:8px 11px;">This browser can\u2019t read text aloud. Safari or Chrome can.</p>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
   html += '<button class="btn btn-ghost btn-sm" id="edit-recipe-btn">Edit recipe</button>';
   html += '</div>';
   }
@@ -2104,7 +2342,8 @@ function renderRecipeDetail(r){
 
   html += '<div class="card-block"><h4>Ingredients</h4>';
   (r.ingredients||[]).forEach(function(ing){
-    html += '<div class="ing-row"><span>' + esc(ing.name) + '</span><span>' + esc(ing.amount) + ' ' + esc(ing.unit) + '</span></div>';
+    var rdI = ui.reader && ui.reader.recipeId === r.id ? ui.reader.items[ui.reader.index] : null;
+    html += '<div class="ing-row' + (rdI && rdI.kind === 'ing' && rdI.ingIdx === r.ingredients.indexOf(ing) ? ' reading-now' : '') + '"><span>' + esc(ing.name) + '</span><span>' + esc(ing.amount) + ' ' + esc(ing.unit) + '</span></div>';
   });
   html += '</div>';
 
@@ -2144,7 +2383,8 @@ function renderRecipeDetail(r){
   displaySteps.forEach(function(st,i){
     var body = esc(st);
     if(hl) body = body.replace(TIME_RE, function(m){ return '<strong class="tm">' + m + '</strong>'; });
-    html += '<li><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + body + '</span></li>';
+    var rdS = ui.reader && ui.reader.recipeId === r.id ? ui.reader.items[ui.reader.index] : null;
+    html += '<li' + (rdS && rdS.kind === 'step' && rdS.stepIdx === i ? ' class="reading-now"' : '') + '><span class="step-num">' + (layout==="bullets" ? "" : (i+1)) + '</span><span>' + body + '</span></li>';
   });
   html += '</ol></div>';
   html += '<div class="print-only card-block"><h4>Notes</h4>' + new Array(7).join('<div class="nl-line"></div>') + '</div>';
@@ -2510,6 +2750,7 @@ function attachHandlers(){
 
 /* tidy-up preview and incoming-share prompt: shown over any tab, so wired up regardless of which tab is open */
 function attachOverlayHandlers(){
+  attachReaderHandlers();
   var coverOverlay = document.getElementById('cover-overlay');
   if(coverOverlay) coverOverlay.onclick = function(e){ if(e.target === coverOverlay && ui.coverPick && !ui.coverPick.saving){ ui.coverPick = null; render(); } };
   var coverCancel = document.getElementById('cover-cancel-btn');
@@ -2618,7 +2859,7 @@ function attachRecipeListHandlers(){
       ui.detailQuantitiesOverride = null;
       ui.detailLevelOverride = null;
       ui.detailNote = "";
-      ui.shareMenu = false;
+      ui.shareMenu = false; ui.readMenu = false;
       ui.confirmDeleteId = null; ui.viewOriginalId = null;
       render();
     };
@@ -2670,9 +2911,16 @@ function attachRecipeDetailHandlers(r){
   if(editBtn) editBtn.onclick = function(){ openEditModal(r); };
 
   warmShareLink(r);
+  var readMenuBtn = document.getElementById('read-menu-btn');
+  if(readMenuBtn) readMenuBtn.onclick = function(e){ e.stopPropagation(); ui.readMenu = !ui.readMenu; ui.shareMenu = false; render(); };
+  function startRead(which){ ui.readMenu = false; readerStart(which); }
+  var rdi = document.getElementById('rd-start-ing'); if(rdi) rdi.onclick = function(){ startRead('ingredients'); };
+  var rdm = document.getElementById('rd-start-method'); if(rdm) rdm.onclick = function(){ startRead('method'); };
+  var rda = document.getElementById('rd-start-all'); if(rda) rda.onclick = function(){ startRead('all'); };
+  var rdsm = document.getElementById('rd-stopeach-menu'); if(rdsm) rdsm.onchange = function(){ ui.readStopEach = rdsm.checked; saveReadPrefs(); };
   var shareMenuBtn = document.getElementById('share-menu-btn');
   if(shareMenuBtn) shareMenuBtn.onclick = function(e){
-    e.stopPropagation(); ui.shareMenu = !ui.shareMenu;
+    e.stopPropagation(); ui.shareMenu = !ui.shareMenu; ui.readMenu = false;
     if(ui.shareMenu) warmShortLink(r);   /* made while the menu is open so the tap can use it instantly */
     render();
   };
@@ -3512,10 +3760,10 @@ function checkIncomingShare(){
 }
 window.addEventListener('hashchange', checkIncomingShare);
 document.addEventListener('click', function(e){
-  if(ui.shareMenu && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; render(); }
+  if((ui.shareMenu || ui.readMenu) && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; ui.readMenu = false; render(); }
 });
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape' && ui.shareMenu){ ui.shareMenu = false; render(); }
+  if(e.key === 'Escape' && (ui.shareMenu || ui.readMenu)){ ui.shareMenu = false; ui.readMenu = false; render(); }
 });
 
 function exportSingleRecipe(r){
@@ -3801,6 +4049,20 @@ function importBackup(e){
 }
 
 loadState();
+loadReadPrefs();
+(function(){
+  try{
+    var box = document.createElement('div');
+    box.style.cssText = 'display:flex;flex-direction:column;row-gap:1px;gap:1px;position:absolute;visibility:hidden;left:-99px;';
+    var i1 = document.createElement('i'), i2 = document.createElement('i');
+    i1.style.cssText = i2.style.cssText = 'display:block;height:1px;';
+    box.appendChild(i1); box.appendChild(i2);
+    document.body.appendChild(box);
+    var ok = box.scrollHeight === 3;
+    document.body.removeChild(box);
+    if(!ok) document.documentElement.className += ' no-flex-gap';
+  }catch(e){}
+})();
 setTimeout(function(){ if(!ui.loaded){ ui.loaded = true; render(); } }, 6000);
 })();
 </script>
