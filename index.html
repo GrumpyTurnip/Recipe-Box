@@ -914,18 +914,46 @@ function ingredientCandidates(ing, all){
 function nameRegex(name, tailAfter){
   return new RegExp('\\b(' + escapeRegex(name) + '(?:s|es)?)\\b' + (tailAfter || ''), 'ig');
 }
+/* Is the text just before position idx already giving an amount ("1 finely chopped", "2 tbsp", "a couple of")? */
+var QTY_WORD = '(?:\\d+(?:[.,]\\d+)?(?:\\s*[\\/\\-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?|[\\u00bc\\u00bd\\u00be\\u2153\\u2154]|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|half|couple)\\b)';
+var QTY_UNIT = '(?:(?:kg|g|ml|l|cl|dl|tbsp|tsp|oz|lbs?|cups?|tablespoons?|teaspoons?|grams?|kilograms?|litres?|liters?|millilitres?|ounces?|pounds?|pinch(?:es)?|handfuls?|bunch(?:es)?|cloves?|sprigs?|tins?|cans?|slices?|sticks?|knobs?)\\b\\.?\\s*)';
+var QTY_FILLER = '(?:(?:of|a|an|the|large|small|medium|big|ripe|fresh|dried|frozen|whole|red|white|brown|yellow|green|purple|golden|new|baby|sweet|extra|good|thick|thin|hot|cold|cooked|raw|tinned|canned|boneless|skinless|[a-z]+ly|[a-z]+ed)\\s+)';
+var PRECEDED_BY_QTY_RE = new RegExp(QTY_WORD + '\\s*' + QTY_UNIT + '{0,2}' + QTY_FILLER + '{0,3}$', 'i');
+function precededByQuantity(text, idx){
+  var before = String(text).slice(Math.max(0, idx - 48), idx);
+  return PRECEDED_BY_QTY_RE.test(before);
+}
+var QTY_SQUARE_RE = new RegExp('\\s*\\[\\s*(' + QTY_WORD + '\\s*' + QTY_UNIT + '{0,2}\\s*)\\]', 'ig');
+/* Standard form is "name (amount)". Turns [2 tbsp] into (2 tbsp), and takes out an amount in brackets
+   when the same amount is already written right before the ingredient ("add 1 finely chopped onion (1)"). */
+function dedupeStepQuantities(step, ings){
+  var removed = 0;
+  var res = String(step).replace(QTY_SQUARE_RE, function(m, q){ return ' (' + q.trim() + ')'; });
+  (ings || []).forEach(function(ing){
+    if(!ing || !ing.name) return;
+    ingredientCandidates(ing, ings).forEach(function(c){
+      var re = new RegExp('\\b(' + escapeRegex(c) + '(?:s|es)?)\\b(\\s*\\(\\s*' + QTY_WORD + '\\s*' + QTY_UNIT + '{0,2}\\s*\\))', 'ig');
+      res = res.replace(re, function(m, name, br, offset, whole){
+        if(precededByQuantity(whole, offset)){ removed++; return name; }
+        return m;
+      });
+    });
+  });
+  return { text: res, removed: removed };
+}
 function annotateStepsWithQuantities(recipe, steps){
   var ings = (recipe.ingredients || []).filter(function(i){ return i.name && String(i.name).trim() && ingredientQtyText(i); });
   var cands = ings.map(function(ing){ return ingredientCandidates(ing, ings); });
   var seen = {};
   return steps.map(function(step){
-    var result = step;
+    var result = dedupeStepQuantities(step, ings).text;
     ings.forEach(function(ing, idx){
       if(seen[idx]) return;
       var qty = ingredientQtyText(ing);
       for(var c = 0; c < cands[idx].length; c++){
         var re = nameRegex(cands[idx][c], '(?!\\s*\\()');   /* skip if a bracket already follows */
         var m = re.exec(result);
+        if(m && precededByQuantity(result, m.index)){ seen[idx] = true; return; }   /* the step already says how much */
         if(m){
           seen[idx] = true;
           result = result.slice(0, m.index + m[0].length) + ' (' + qty + ')' + result.slice(m.index + m[0].length);
@@ -1119,6 +1147,10 @@ function tidyRecipeLocal(rec){
   });
   var sb = stripBakedQuantities(finalSteps, (rec.ingredients || []).concat((rec.ingredients || []).map(function(i){ return { name: i.name, amount: i.amount, unit: normUnitStr(i.unit) }; }), out));   /* original amounts too: a merged total no longer matches the old "(2 tbsp)" */
   finalSteps = sb.steps;
+  var dq = 0;
+  var allIngs = (rec.ingredients || []).concat(out);
+  finalSteps = finalSteps.map(function(st){ var d = dedupeStepQuantities(st, allIngs); dq += d.removed; return d.text; });
+  if(dq) changes.push('Removed ' + dq + ' doubled-up quantit' + (dq === 1 ? 'y' : 'ies') + ' in the method (where the amount was already written in the step)');
   if(sb.removed) changes.push('Took ' + sb.removed + ' quantit' + (sb.removed === 1 ? 'y' : 'ies') + ' out of the method text \u2014 they show automatically when \u201cQuantities in method\u201d is on');
   if(numStripped) changes.push('Removed step numbering from ' + numStripped + ' step' + (numStripped === 1 ? '' : 's'));
   if(dupes) changes.push('Removed ' + dupes + ' repeated step' + (dupes === 1 ? '' : 's'));
@@ -2350,7 +2382,7 @@ function renderRecipeDetail(r){
   var hasQuick = !!(r.stepsQuick && r.stepsQuick.length), hasGuided = !!(r.stepsGuided && r.stepsGuided.length);
   var level = (detailLevel === "quick" && hasQuick) ? "quick" : ((detailLevel === "guided" && hasGuided) ? "guided" : "detailed");
   var baseSteps = level === "quick" ? r.stepsQuick : (level === "guided" ? r.stepsGuided : (r.steps || []));
-  var displaySteps = showQty ? annotateStepsWithQuantities(r, baseSteps) : baseSteps;
+  var displaySteps = showQty ? annotateStepsWithQuantities(r, baseSteps) : baseSteps.map(function(st){ return dedupeStepQuantities(st, r.ingredients).text; });
   var hl = level !== "detailed";
 
   var captions = {
