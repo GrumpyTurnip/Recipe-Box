@@ -197,6 +197,17 @@
   .reading-now{background:#fff3cf;box-shadow:-6px 0 0 #fff3cf,6px 0 0 #fff3cf;border-radius:4px;}
   .ing-row.reading-now{box-shadow:none;}
   body.reading-pad{padding-bottom:150px;}
+  .shop-tools{display:flex;flex-wrap:wrap;align-items:center;margin-top:12px;}
+  .shop-tools > *{margin:0 8px 8px 0;}
+  .menu-sep{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);padding:8px 11px 2px;border-top:1px solid var(--line, #e4dccd);margin-top:4px;}
+  .tag-opt{display:block;margin:6px 0;font-size:14px;cursor:pointer;}
+  .tag-opt input{width:auto;display:inline-block;margin:0 8px 0 0;vertical-align:middle;}
+  .tidy-tags h5{margin:14px 0 4px;font-size:13px;}
+  .tidy-tags .sub{font-size:12px;color:var(--ink-soft);margin:0 0 4px 24px;line-height:1.4;}
+  .warn-note{font-size:12px;color:#7a4300;background:#fff3cf;border-radius:6px;padding:6px 9px;margin:4px 0 8px 24px;line-height:1.4;}
+  .warn-note.block{margin-left:0;}
+  .tidy-tags details{margin-top:10px;font-size:12px;}
+  .tidy-tags details li{margin:2px 0;}
   .meta-chip{display:inline-block;font-size:12px;color:var(--ink-soft);background:var(--paper-2, #f1ece3);border-radius:999px;padding:2px 10px;margin:0 6px 6px 0;white-space:nowrap;}
   .rcard .meta-chip{font-size:11px;padding:1px 8px;margin:0 4px 4px 0;}
   .more-opts{margin-top:18px;padding-top:12px;border-top:1px solid var(--line, #ddd);}
@@ -1053,6 +1064,148 @@ function formatAmountNum(n){
   return String(Math.round(n * 100) / 100);
 }
 function tidyText(t){ return String(t == null ? "" : t).replace(/\s+/g, ' ').trim(); }
+
+/* ---------- tag suggestions (categories + dietary) ---------- */
+function ingredientTextForTags(ing){ return String(ing && ing.name || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim(); }
+var DIET_RULES = {
+  meat: /\b(chicken|beef|pork|lamb|mutton|veal|bacon|pancetta|prosciutto|gammon|ham|sausages?|chorizo|salami|pepperoni|mince|minced|steaks?|turkey|duck|goose|venison|rabbit|liver|oxtail|brisket|salmon|tuna|cod|haddock|trout|mackerel|sardines?|anchov(?:y|ies)|prawns?|shrimps?|crab|lobster|mussels?|clams?|squid|calamari|scallops?|oysters?|fish|shellfish|seafood|lard|suet|gelatine|gelatin|black pudding|bone broth)\b/,
+  dairy: /\b(milk|butter|cheese|cheddar|parmesan|parmigiano|pecorino|mozzarella|feta|halloumi|ricotta|mascarpone|paneer|brie|camembert|gouda|gruyere|gruyère|stilton|emmental|cream|creme fraiche|crème fraîche|yoghurt|yogurt|ghee|whey|casein|custard|buttermilk|kefir|curd|labneh|burrata)\b/,
+  egg: /\b(eggs?|mayonnaise|mayo|meringue|aioli|hollandaise)\b/,
+  honey: /\bhoney\b/,
+  gluten: /\b(flour|bread|breadcrumbs?|panko|pasta|spaghetti|penne|fusilli|tagliatelle|linguine|macaroni|lasagn[ea]|orzo|noodles|couscous|bulgur|bulghur|bulgar|barley|rye|semolina|spelt|farro|freekeh|seitan|biscuits?|digestives?|cake|pastry|filo|phyllo|tortillas?|wraps?|pitta|pita|naan|chapati|roti|baguette|ciabatta|sourdough|crackers?|croutons?|pizza base|pizza dough|dumplings?|gnocchi|beer|ale|lager|stout|soy sauce|soya sauce|malt|wheat|udon|ramen)\b/,
+  nuts: /\b(almonds?|walnuts?|cashews?|pecans?|pistachios?|hazelnuts?|peanuts?|macadamias?|brazil nuts?|pine nuts?|pine kernels?|nuts?|marzipan|praline|nutella|frangipane|amaretti|amaretto|nougat|gianduja|groundnut)\b/
+};
+var DIET_CONCERNS = [
+  { re: /\b(stock|bouillon|broth|gravy)\b/, diets: { Vegetarian: 'stock', Vegan: 'stock', 'Dairy-free': 'stock', 'Gluten-free': 'stock' }, why: 'stock and gravy can contain meat, milk or gluten', skipIf: /\b(vegetable|veg|mushroom|miso)\b/, skipDiets: ['Vegetarian', 'Vegan'] },
+  { re: /\bworcestershire\b/, diets: { Vegetarian: 1, Vegan: 1, 'Gluten-free': 1 }, why: 'contains anchovies and malt vinegar' },
+  { re: /\bpesto\b/, diets: { Vegetarian: 1, Vegan: 1, 'Dairy-free': 1, 'Nut-free': 1 }, why: 'usually has parmesan and pine nuts' },
+  { re: /\b(parmesan|parmigiano|pecorino|grana padano)\b/, diets: { Vegetarian: 1 }, why: 'traditionally made with animal rennet' },
+  { re: /\b(curry paste|thai paste|shrimp paste|hoisin|kimchi)\b/, diets: { Vegetarian: 1, Vegan: 1, 'Gluten-free': 1 }, why: 'pastes and sauces often contain shrimp, fish or soy' },
+  { re: /\b(miso|tamari)\b/, diets: { 'Gluten-free': 1 }, why: 'can contain barley or wheat' },
+  { re: /\b(chocolate|cocoa|cacao)\b/, diets: { Vegan: 1, 'Dairy-free': 1, 'Nut-free': 1 }, why: 'chocolate often has milk and nut traces' },
+  { re: /\b(margarine|spread)\b/, diets: { Vegan: 1, 'Dairy-free': 1 }, why: 'some contain milk' },
+  { re: /\b(oats|porridge oats|oatmeal|muesli|granola)\b/, diets: { 'Gluten-free': 1, Vegan: 1, 'Nut-free': 1 }, why: 'oats are often cross-contaminated with gluten; muesli and granola can have honey and nuts' },
+  { re: /\bbaking powder\b/, diets: { 'Gluten-free': 1 }, why: 'some brands contain wheat starch' },
+  { re: /\b(wine|beer|cider|sherry|port|brandy|rum)\b/, diets: { Vegetarian: 1, Vegan: 1 }, why: 'some alcohol is filtered with animal products' },
+  { re: /\b(bread|brioche|naan|pastry|puff pastry|biscuits?|cake|tortillas?|wraps?|crackers?)\b/, diets: { Vegan: 1, 'Dairy-free': 1 }, why: 'shop-bought versions often contain milk or egg' },
+  { re: /\b(fresh pasta|egg noodles|noodles)\b/, diets: { Vegan: 1 }, why: 'fresh pasta and noodles often contain egg', skipIf: /\b(rice|glass)\b/, skipDiets: ['Vegan'] },
+  { re: /\bsausages?\b/, diets: { 'Gluten-free': 1, 'Dairy-free': 1 }, why: 'sausages often contain rusk or milk powder' },
+  { re: /\b(soy sauce|soya sauce)\b/, diets: { 'Gluten-free': 1 }, why: 'regular soy sauce contains wheat' }
+];
+var DIET_LABELS = {
+  'Vegetarian': 'no meat or fish',
+  'Vegan': 'no meat, fish, dairy, egg or honey',
+  'Gluten-free': 'no wheat, barley, rye, bread, pasta or similar',
+  'Dairy-free': 'no milk, butter, cheese, cream or yoghurt',
+  'Nut-free': 'no nuts'
+};
+function classifyIngredient(ing){
+  var n = ingredientTextForTags(ing), flags = [], maybe = [];
+  if(!n) return { name: '', flags: flags, maybe: maybe };
+  var said = {
+    vegan: /\b(vegan|plant[- ]based|veggie|meat[- ]?free|meatless|quorn)\b/.test(n),
+    df: /\b(dairy[- ]?free|non[- ]?dairy)\b/.test(n),
+    gf: /\bgluten[- ]?free\b/.test(n),
+    ef: /\begg[- ]?free\b/.test(n)
+  };
+  /* take out look-alikes that aren't what they seem, then test */
+  var dairyText = n.replace(/\b(coconut|almond|oat|soy|soya|rice|cashew|hazelnut|nut|cocoa|shea|peanut)\s+(milk|butter|cream|yoghurt|yogurt|cheese)\b/g, ' ').replace(/\bbutter beans?\b/g, ' ').replace(/\bcream of tartar\b/g, ' ');
+  var glutenText = n.replace(/\b(corn|rice|gram|chickpea|besan|almond|coconut|buckwheat|potato|tapioca|cassava|quinoa|lentil|millet)\s+flour\b/g, ' ').replace(/\brice (noodles?|paper)\b/g, ' ').replace(/\b(glass|bean thread) noodles\b/g, ' ').replace(/\blettuce wraps?\b/g, ' ');
+  var nutsText = n.replace(/\b(nutmeg|butternut|water chestnuts?|nutritional yeast)\b/g, ' ');
+  var meat = DIET_RULES.meat.test(n), dairy = DIET_RULES.dairy.test(dairyText), egg = DIET_RULES.egg.test(n), honey = DIET_RULES.honey.test(n);
+  var gluten = DIET_RULES.gluten.test(glutenText), nuts = DIET_RULES.nuts.test(nutsText);
+  if(said.vegan){ meat = false; dairy = false; egg = false; honey = false; }
+  if(said.df) dairy = false;
+  if(said.gf) gluten = false;
+  if(said.ef) egg = false;
+  if(meat) flags.push('meat or fish');
+  if(dairy) flags.push('dairy');
+  if(egg) flags.push('egg');
+  if(honey) flags.push('honey');
+  if(gluten) flags.push('gluten');
+  if(nuts) flags.push('nuts');
+  DIET_CONCERNS.forEach(function(c){
+    if(!c.re.test(n)) return;
+    Object.keys(c.diets).forEach(function(d){
+      if(c.skipIf && c.skipIf.test(n) && c.skipDiets && c.skipDiets.indexOf(d) > -1) return;
+      if(d === 'Gluten-free' && said.gf) return;
+      if(d === 'Vegan' && said.vegan) return;
+      if(d === 'Dairy-free' && (said.df || said.vegan)) return;
+      maybe.push({ diet: d, why: c.why });
+    });
+  });
+  return { name: n, flags: flags, maybe: maybe, meat: meat, dairy: dairy, egg: egg, honey: honey, gluten: gluten, nuts: nuts };
+}
+/* Dietary check from ingredient names only. Never certain: it is always shown as "please confirm". */
+function dietCheck(ingredients){
+  var rows = (ingredients || []).filter(function(i){ return i && i.name; }).map(function(i){ var c = classifyIngredient(i); c.display = String(i.name).trim(); return c; });
+  var res = {};
+  ['Vegetarian', 'Vegan', 'Gluten-free', 'Dairy-free', 'Nut-free'].forEach(function(tag){
+    var bad = [], maybe = [];
+    rows.forEach(function(r){
+      var hit = false;
+      if(tag === 'Vegetarian') hit = r.meat;
+      else if(tag === 'Vegan') hit = r.meat || r.dairy || r.egg || r.honey;
+      else if(tag === 'Gluten-free') hit = r.gluten;
+      else if(tag === 'Dairy-free') hit = r.dairy;
+      else if(tag === 'Nut-free') hit = r.nuts;
+      if(hit) bad.push(r.display);
+      else r.maybe.forEach(function(m){ if(m.diet === tag) maybe.push({ name: r.display, why: m.why }); });
+    });
+    res[tag] = { bad: bad, maybe: maybe, checked: rows.length };
+  });
+  return { tags: res, rows: rows };
+}
+var CATEGORY_RULES = [
+  ['Dessert', /\b(cake|brownies?|pudding|ice cream|tart|tiramisu|cheesecake|mousse|crumble|cookies?|biscuits?|trifle|pavlova|meringue|sorbet|fudge|custard|panna cotta|truffles?|flapjacks?|donuts?|doughnuts?|cupcakes?|muffins?|sundae|parfait|crepes? suzette|sticky toffee)\b/],
+  ['Baking', /\b(bread|loaf|dough|scones?|cake|brownies?|cookies?|biscuits?|muffins?|cupcakes?|pastry|pie|tart|flapjacks?|focaccia|rolls?|buns?|bagels?|sourdough|baked|traybake|shortbread)\b/],
+  ['Breakfast', /\b(pancakes?|omelette|omelet|porridge|granola|muesli|scrambled|french toast|eggs benedict|breakfast|waffles?|overnight oats|shakshuka|frittata|hash browns?)\b/],
+  ['Drink', /\b(smoothie|cocktail|lemonade|juice|milkshake|latte|tea|coffee|cordial|punch|mocktail|hot chocolate|sangria)\b/],
+  ['Sauce/Base', /\b(sauce|dressing|marinade|gravy|stock|pesto|salsa|dip|hummus|houmous|chutney|relish|jam|curd|paste|vinaigrette|aioli|mayonnaise|rub|spice mix)\b/],
+  ['Side', /\b(salad|slaw|coleslaw|side|roast potatoes|mash|mashed|chips|fries|garlic bread|rice pilaf|stuffing|roasted vegetables|greens)\b/],
+  ['Main', /\b(chicken|beef|pork|lamb|steak|pasta|spaghetti|lasagne|lasagna|curry|stew|casserole|soup|risotto|pie|burgers?|salmon|fish|prawn|tacos?|chilli|chili|roast|bake|stir[- ]?fry|pizza|noodles|ragu|bolognese|tagine|dal|dhal|halloumi|tofu|meatballs?|sausages?)\b/]
+];
+function suggestCategoryTags(title, ingredients){
+  var t = String(title || '').toLowerCase(), found = [];
+  CATEGORY_RULES.forEach(function(r){ if(r[1].test(t) && found.indexOf(r[0]) === -1) found.push(r[0]); });
+  /* a dish can be Baking and a Main (a pie), but not a Main and a Dessert, Breakfast, Drink or Side */
+  var mi = found.indexOf('Main');
+  if(mi > -1 && (found.indexOf('Dessert') > -1 || found.indexOf('Breakfast') > -1 || found.indexOf('Drink') > -1 || found.indexOf('Side') > -1)) found.splice(mi, 1);
+  /* "Chicken pesto pasta" is a main; "Basil pesto" is a sauce */
+  var si = found.indexOf('Sauce/Base');
+  if(si > -1 && found.indexOf('Main') > -1 && !/\b(sauce|dressing|marinade|gravy|stock|pesto|salsa|dip|chutney|relish|paste|jam|vinaigrette|aioli|mayonnaise)\s*$/.test(t)) found.splice(si, 1);
+  else if(si > -1 && found.indexOf('Main') > -1) found.splice(found.indexOf('Main'), 1);
+  return found.filter(function(t2){ return CATEGORY_TAGS.indexOf(t2) > -1; }).slice(0, 2);
+}
+/* All the tag options the tidy-up preview offers. */
+function tagOptionsFor(title, ingredients, currentTags){
+  var cur = currentTags || [];
+  var cats = suggestCategoryTags(title, ingredients).filter(function(t){ return cur.indexOf(t) === -1; });
+  var dc = dietCheck(ingredients);
+  var diets = [], conflicts = [];
+  Object.keys(dc.tags).forEach(function(tag){
+    var d = dc.tags[tag];
+    if(cur.indexOf(tag) > -1){ if(d.bad.length) conflicts.push({ tag: tag, bad: d.bad }); return; }
+    if(!d.checked || d.bad.length) return;
+    diets.push({ tag: tag, maybe: d.maybe, checked: d.checked });
+  });
+  return { cats: cats, diets: diets, conflicts: conflicts, rows: dc.rows };
+}
+function checkDietAI(title, ingredients, tagsToCheck){
+  var list = (ingredients || []).map(function(i){ return [i.amount, i.unit, i.name].filter(Boolean).join(' '); }).join("\n");
+  var prompt = "Double-check dietary labels for this recipe, from its ingredients only.\n" +
+    "Labels to check: " + tagsToCheck.join(", ") + ".\n" +
+    "Be strict and cautious. If any ingredient commonly contains something that would break a label, say so " +
+    "(for example stock cubes, Worcestershire sauce, pesto, parmesan (animal rennet), soy sauce (wheat), bread, pasta, pastry, chocolate, wine, curry pastes). " +
+    "Coconut, nutmeg and butternut squash are not nuts. Do not guess hidden ingredients you have no reason to suspect.\n\n" +
+    "Recipe: " + title + "\nIngredients:\n" + list + "\n\n" +
+    "Respond with ONLY valid JSON, no markdown fences: " + '{"Label": {"ok": true or false, "concerns": ["short note naming the ingredient"]}}' + " with one entry per label above.";
+  return runAI({ prompt: prompt, images: [], useWebSearch: false, maxTokens: 900 }).then(function(text){
+    var p = parseJsonLoose(text);
+    if(!p || typeof p !== 'object') throw new Error("The AI’s answer couldn’t be read — please try again.");
+    return p;
+  });
+}
 
 function minutesToText(m){
   m = Math.round(m);
@@ -2010,6 +2163,56 @@ function renderCoverPickModal(){
   return html;
 }
 
+function renderTidyTags(t, o){
+  var html = '<div class="card-block tidy-tags"><h4>Tags</h4>';
+  var sel = function(map, key, def){ return map[key] === undefined ? def : !!map[key]; };
+  if(o.cats.length){
+    html += '<p style="font-size:12px;color:var(--ink-soft);margin:0 0 4px;">Suggested from the title \u2014 untick any you don\u2019t want.</p>';
+    o.cats.forEach(function(tag){
+      html += '<label class="tag-opt"><input type="checkbox" data-tidy-tag="' + esc(tag) + '"' + (sel(t.tagSel, tag, true) ? ' checked' : '') + '> Add \u201c' + esc(tag) + '\u201d</label>';
+    });
+  }
+  if(o.conflicts.length){
+    o.conflicts.forEach(function(c){
+      html += '<div class="warn-note block">\u26a0 This recipe is tagged <strong>' + esc(c.tag) + '</strong>, but the ingredients include <strong>' + esc(c.bad.join(', ')) + '</strong>.</div>';
+      html += '<label class="tag-opt"><input type="checkbox" data-tidy-untag="' + esc(c.tag) + '"' + (sel(t.untagSel, c.tag, true) ? ' checked' : '') + '> Remove the \u201c' + esc(c.tag) + '\u201d tag</label>';
+    });
+  }
+  if(o.diets.length){
+    html += '<h5>Dietary tags \u2014 please confirm each one</h5>';
+    html += '<div class="warn-note block">I can only read the ingredient <em>names</em>, so I can\u2019t see what\u2019s in shop-bought items. These are never added automatically \u2014 tick one only once you\u2019ve checked your own labels (important for allergies).</div>';
+    o.diets.forEach(function(d){
+      var tick = sel(t.tagSel, d.tag, false);
+      html += '<label class="tag-opt"><input type="checkbox" data-tidy-tag="' + esc(d.tag) + '"' + (tick ? ' checked' : '') + '> <strong>' + esc(d.tag) + '</strong> \u2014 ' + (d.maybe.length ? 'I\u2019ve checked the flagged ingredients' : 'I\u2019ve checked it') + '</label>';
+      html += '<div class="sub">Looked at ' + d.checked + ' ingredient' + (d.checked === 1 ? '' : 's') + ': ' + esc(DIET_LABELS[d.tag] || '') + ' found.</div>';
+      if(d.maybe.length){
+        var seen = {}, items = [];
+        d.maybe.forEach(function(m){ var k = m.name + '|' + m.why; if(!seen[k]){ seen[k] = 1; items.push('<strong>' + esc(m.name) + '</strong> (' + esc(m.why) + ')'); } });
+        html += '<div class="warn-note">\u26a0 Worth checking: ' + items.join('; ') + '.</div>';
+      }
+      var ac = t.aiCheck && t.aiCheck.res && t.aiCheck.res[d.tag];
+      if(ac){
+        html += ac.ok === false
+          ? '<div class="warn-note">\ud83e\udd16 The AI second opinion says <strong>not safe to tag</strong>: ' + esc((ac.concerns || []).join('; ') || 'it found a concern') + '.</div>'
+          : '<div class="sub">\ud83e\udd16 The AI second opinion agrees' + ((ac.concerns || []).length ? ', but notes: ' + esc(ac.concerns.join('; ')) : '') + '.</div>';
+      }
+    });
+    if(getActiveProvider().mode !== "none"){
+      if(t.aiCheck && t.aiCheck.loading) html += '<div class="status-line"><span class="spinner"></span> Getting an AI second opinion\u2026</div>';
+      else html += '<button class="btn btn-ghost btn-sm" id="tidy-diet-ai-btn" type="button">' + (t.aiCheck && t.aiCheck.res ? 'Ask the AI again' : 'Double-check with AI') + '</button>';
+      if(t.aiCheck && t.aiCheck.error) html += '<p class="error-line">' + esc(t.aiCheck.error) + '</p>';
+    } else {
+      html += '<p style="font-size:11px;color:var(--ink-soft);margin:6px 0 0;">Add an API key in Settings to get an AI second opinion on these.</p>';
+    }
+  }
+  html += '<details><summary>What I checked</summary><ul>';
+  o.rows.forEach(function(r){
+    html += '<li>' + esc(r.display) + ' \u2014 ' + (r.flags.length ? 'contains ' + esc(r.flags.join(', ')) : 'nothing flagged') + (r.maybe.length ? ' <em>(uncertain: ' + esc(r.maybe.map(function(m){ return m.diet; }).filter(function(x, i, arr){ return arr.indexOf(x) === i; }).join(', ')) + ')</em>' : '') + '</li>';
+  });
+  html += '</ul></details></div>';
+  return html;
+}
+
 function renderTidyModal(){
   var t = ui.tidy;
   var r = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0];
@@ -2050,11 +2253,18 @@ function renderTidyModal(){
     previewSteps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
     html += '</ol></div>';
   }
+  var baseTags = (a.tags || r.tags || []);
+  var tagOpts = tagOptionsFor(a.title || r.title, a.ingredients, baseTags);
+  var hasTagOpts = !!(tagOpts.cats.length || tagOpts.diets.length || tagOpts.conflicts.length);
+  if(!t.tagSel) t.tagSel = {};
+  if(!t.untagSel) t.untagSel = {};
+  if(hasTagOpts) html += renderTidyTags(t, tagOpts);
+  var tickedDiet = tagOpts.diets.filter(function(d){ return t.tagSel[d.tag]; }).length;
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-  if(changed) html += '<button class="btn btn-primary" id="tidy-apply-btn">Apply changes</button>';
+  if(changed || hasTagOpts) html += '<button class="btn btn-primary" id="tidy-apply-btn">' + (changed ? 'Apply changes' : 'Apply tags') + (tickedDiet ? ' (incl. dietary tags)' : '') + '</button>';
   if(getActiveProvider().mode !== "none" && t.source !== "ai") html += '<button class="btn btn-accent" id="tidy-ai-btn">Tidy with AI instead</button>';
   if(t.source === "ai") html += '<button class="btn btn-ghost" id="tidy-local-btn">Back to simple tidy</button>';
-  html += '<button class="btn btn-ghost" id="tidy-cancel-btn">' + (changed ? 'Cancel' : 'Close') + '</button>';
+  html += '<button class="btn btn-ghost" id="tidy-cancel-btn">' + (changed || hasTagOpts ? 'Cancel' : 'Close') + '</button>';
   html += '</div>';
   if(t.source !== "ai" && getActiveProvider().mode === "none") html += '<p style="font-size:11px;color:var(--ink-soft);margin-top:10px;">A deeper AI rewrite (spelling, wording, clearer steps) is available once you add an API key in Settings.</p>';
   html += '</div></div>';
@@ -2362,6 +2572,10 @@ function renderRecipeDetail(r){
     if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-native-btn">More apps\u2026<small>Messages, email, AirDrop and so on</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-print-btn">Print\u2026<small>This page, with dotted lines for handwritten notes</small></button>';
     html += '<button class="menu-item" role="menuitem" id="share-copy-btn">Copy as text<small>Plain text for an email or note</small></button>';
+    html += '<div class="menu-sep">Just the ingredients</div>';
+    html += '<button class="menu-item" role="menuitem" id="share-ing-wa-btn">Ingredients on WhatsApp<small>A tidy shopping list for this recipe</small></button>';
+    html += '<button class="menu-item" role="menuitem" id="share-ing-copy-btn">Copy ingredients<small>Plain text</small></button>';
+    if(navigator.share) html += '<button class="menu-item" role="menuitem" id="share-ing-native-btn">Ingredients via other apps\u2026</button>';
     html += '<button class="menu-item" role="menuitem" id="share-download-btn">Download recipe file<small>The full recipe with photos, as a file</small></button>';
     if(ui.shortLinkIssue) html += '<p style="font-size:11px;color:var(--ink-soft);margin:6px 11px 4px;line-height:1.4;">Links are long for now: short links need a one-off update to your Firestore rules (Settings \u2192 Account &amp; sync \u2192 setup notes).</p>';
     html += '</div>';
@@ -2490,8 +2704,28 @@ function renderPantry(){
     html += '<button class="btn btn-ghost btn-sm to-pantry" data-shop-to-pantry="' + item.id + '" title="Move to pantry" aria-label="Move ' + esc(item.name) + ' to pantry">\u2192 Pantry</button>';
     html += '<button class="small-x" data-shop-remove="' + item.id + '">&times;</button></div>';
   });
-  if(state.shopping.some(function(i){ return i.checked; })){
+  var anyTicked = state.shopping.some(function(i){ return i.checked; });
+  if(anyTicked){
     html += '<div style="margin-top:10px;"><button class="btn btn-accent btn-sm" id="shop-ticked-to-pantry">Move ticked items to pantry</button></div>';
+  }
+  if(state.shopping.length){
+    html += '<div class="shop-tools">';
+    html += '<div class="menu-wrap"><button class="btn btn-primary btn-sm" id="shop-share-menu-btn" aria-haspopup="true" aria-expanded="' + (ui.shopMenu ? 'true' : 'false') + '">Share list \u25be</button>';
+    if(ui.shopMenu){
+      html += '<div class="menu" role="menu">';
+      html += '<button class="menu-item" role="menuitem" id="shop-share-wa">Send on WhatsApp<small>What\u2019s still to buy</small></button>';
+      if(navigator.share) html += '<button class="menu-item" role="menuitem" id="shop-share-native">More apps\u2026<small>Messages, email, notes and so on</small></button>';
+      html += '<button class="menu-item" role="menuitem" id="shop-share-copy">Copy as text</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+    if(anyTicked) html += '<button class="btn btn-ghost btn-sm" id="shop-clear-ticked">Clear ticked</button>';
+    if(ui.confirmClearShop){
+      html += '<span style="font-size:12px;">Clear the whole list?</span><button class="btn btn-danger btn-sm" id="shop-clear-yes">Yes, clear it</button><button class="btn btn-ghost btn-sm" id="shop-clear-no">Cancel</button>';
+    } else {
+      html += '<button class="btn btn-ghost btn-sm" id="shop-clear-all">Clear all</button>';
+    }
+    html += '</div>';
   }
   html += '<div class="list-row" style="margin-top:12px;">';
   html += '<input type="text" id="shop-input" placeholder="Add an item...">';
@@ -2758,7 +2992,7 @@ function attachHandlers(){
 
   var tabBtns = document.querySelectorAll('.tab-btn');
   tabBtns.forEach(function(btn){
-    btn.onclick = function(){ ui.tab = btn.getAttribute('data-tab'); ui.openRecipeId = null; ui.pantryNote = ''; render(); };
+    btn.onclick = function(){ ui.tab = btn.getAttribute('data-tab'); ui.openRecipeId = null; ui.pantryNote = ''; ui.shopMenu = false; ui.confirmClearShop = false; render(); };
   });
 
   if(ui.tab === "recipes"){
@@ -2803,6 +3037,34 @@ function attachOverlayHandlers(){
   };
   var tidyOverlay = document.getElementById('tidy-overlay');
   if(tidyOverlay) tidyOverlay.onclick = function(e){ if(e.target === tidyOverlay && ui.tidy && !ui.tidy.loading){ ui.tidy = null; render(); } };
+  document.querySelectorAll('[data-tidy-tag]').forEach(function(cb){
+    cb.onchange = function(){ if(ui.tidy){ if(!ui.tidy.tagSel) ui.tidy.tagSel = {}; ui.tidy.tagSel[cb.getAttribute('data-tidy-tag')] = cb.checked; render(); } };
+  });
+  document.querySelectorAll('[data-tidy-untag]').forEach(function(cb){
+    cb.onchange = function(){ if(ui.tidy){ if(!ui.tidy.untagSel) ui.tidy.untagSel = {}; ui.tidy.untagSel[cb.getAttribute('data-tidy-untag')] = cb.checked; render(); } };
+  });
+  var dietAiBtn = document.getElementById('tidy-diet-ai-btn');
+  if(dietAiBtn) dietAiBtn.onclick = function(){
+    var t = ui.tidy; if(!t || !t.after) return;
+    var rr = state.recipes.filter(function(x){ return x.id === t.recipeId; })[0]; if(!rr) return;
+    var base = (t.after.tags || rr.tags || []);
+    var o = tagOptionsFor(t.after.title || rr.title, t.after.ingredients, base);
+    var labels = o.diets.map(function(d){ return d.tag; });
+    if(!labels.length) return;
+    t.aiCheck = { loading: true };
+    render();
+    checkDietAI(t.after.title || rr.title, t.after.ingredients, labels).then(function(res){
+      if(ui.tidy !== t) return;
+      var clean = {};
+      labels.forEach(function(l){ var v = res[l]; if(v && typeof v === 'object'){ clean[l] = { ok: v.ok !== false, concerns: (Array.isArray(v.concerns) ? v.concerns : []).map(String).filter(Boolean) }; if(clean[l].ok === false) t.tagSel[l] = false; } });
+      t.aiCheck = { res: clean };
+      render();
+    }).catch(function(err){
+      if(ui.tidy !== t) return;
+      t.aiCheck = { error: friendlyErrorMessage(err, "Couldn\u2019t reach the AI for a second opinion.") };
+      render();
+    });
+  };
   var tidyCancel = document.getElementById('tidy-cancel-btn');
   if(tidyCancel) tidyCancel.onclick = function(){ ui.tidy = null; render(); };
   var tidyApply = document.getElementById('tidy-apply-btn');
@@ -2814,7 +3076,12 @@ function attachOverlayHandlers(){
       rr.title = t.after.title || rr.title;
       rr.ingredients = t.after.ingredients;
       rr.steps = t.after.steps;
-      if(t.after.tags) rr.tags = t.after.tags;
+      var finalTags = (t.after.tags || rr.tags || []).slice();
+      var o2 = tagOptionsFor(t.after.title || rr.title, t.after.ingredients, finalTags);
+      o2.conflicts.forEach(function(c){ if(t.untagSel && t.untagSel[c.tag] !== false){ finalTags = finalTags.filter(function(x){ return x !== c.tag; }); } });
+      o2.cats.forEach(function(tag){ if(!t.tagSel || t.tagSel[tag] !== false){ if(finalTags.indexOf(tag) === -1) finalTags.push(tag); } });
+      o2.diets.forEach(function(d){ if(t.tagSel && t.tagSel[d.tag] === true){ if(finalTags.indexOf(d.tag) === -1) finalTags.push(d.tag); } });
+      rr.tags = finalTags;
       if(t.after.time && !rr.time) rr.time = t.after.time;
       if(t.after.servings && !rr.servings) rr.servings = t.after.servings;
       rr.stepsQuick = null; rr.stepsGuided = null;
@@ -2963,6 +3230,9 @@ function attachRecipeDetailHandlers(r){
   menuAction('share-whatsapp-btn', function(){ shareOnWhatsApp(r); });
   menuAction('share-link-btn', function(){ copyShareLink(r); });
   menuAction('share-copy-btn', function(){ copyRecipeAsText(r); });
+  menuAction('share-ing-wa-btn', function(){ sharePlainText('whatsapp', ingredientsShareText(r), r.title); });
+  menuAction('share-ing-copy-btn', function(){ sharePlainText('copy', ingredientsShareText(r), r.title, 'Ingredients copied \u2014 paste them anywhere.'); });
+  menuAction('share-ing-native-btn', function(){ sharePlainText('native', ingredientsShareText(r), r.title); });
   menuAction('share-print-btn', function(){ setTimeout(function(){ try{ window.print(); }catch(e){ alert("Couldn't open the print dialog from here \u2014 try your browser's own Print option."); } }, 60); });
   menuAction('share-download-btn', function(){ exportSingleRecipe(r); });
   menuAction('share-native-btn', function(){
@@ -3040,6 +3310,34 @@ function attachPantryHandlers(){
   if(shopInput) shopInput.onkeydown = function(e){ if(e.key==='Enter') addShop(); };
 
   var pantryAddBtn = document.getElementById('pantry-add-btn');
+  var shopMenuBtn = document.getElementById('shop-share-menu-btn');
+  if(shopMenuBtn) shopMenuBtn.onclick = function(e){ e.stopPropagation(); ui.shopMenu = !ui.shopMenu; ui.confirmClearShop = false; render(); };
+  function shopShare(how){
+    ui.shopMenu = false;
+    var text = shoppingListText();
+    if(!text){ alert("Nothing left to buy \u2014 everything on the list is ticked."); render(); return; }
+    sharePlainText(how, text, 'Shopping list', 'Shopping list copied \u2014 paste it anywhere.');
+    render();
+  }
+  var swa = document.getElementById('shop-share-wa'); if(swa) swa.onclick = function(){ shopShare('whatsapp'); };
+  var sna = document.getElementById('shop-share-native'); if(sna) sna.onclick = function(){ shopShare('native'); };
+  var scp = document.getElementById('shop-share-copy'); if(scp) scp.onclick = function(){ shopShare('copy'); };
+  var sct = document.getElementById('shop-clear-ticked');
+  if(sct) sct.onclick = function(){
+    var n = state.shopping.filter(function(i){ return i.checked; }).length;
+    state.shopping = state.shopping.filter(function(i){ return !i.checked; });
+    ui.pantryNote = 'Cleared ' + n + ' ticked item' + (n === 1 ? '' : 's') + '.';
+    saveState();
+  };
+  var sca = document.getElementById('shop-clear-all'); if(sca) sca.onclick = function(){ ui.confirmClearShop = true; render(); };
+  var scn = document.getElementById('shop-clear-no'); if(scn) scn.onclick = function(){ ui.confirmClearShop = false; render(); };
+  var scy = document.getElementById('shop-clear-yes');
+  if(scy) scy.onclick = function(){
+    var n = state.shopping.length;
+    state.shopping = []; ui.confirmClearShop = false;
+    ui.pantryNote = 'Cleared the shopping list (' + n + ' item' + (n === 1 ? '' : 's') + ').';
+    saveState();
+  };
   var mergeBtn = document.getElementById('pantry-merge-btn');
   if(mergeBtn) mergeBtn.onclick = function(){
     var seen = {}, kept = [], removed = [];
@@ -3792,10 +4090,10 @@ function checkIncomingShare(){
 }
 window.addEventListener('hashchange', checkIncomingShare);
 document.addEventListener('click', function(e){
-  if((ui.shareMenu || ui.readMenu) && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; ui.readMenu = false; render(); }
+  if((ui.shareMenu || ui.readMenu || ui.shopMenu) && !(e.target.closest && e.target.closest('.menu-wrap'))){ ui.shareMenu = false; ui.readMenu = false; ui.shopMenu = false; render(); }
 });
 document.addEventListener('keydown', function(e){
-  if(e.key === 'Escape' && (ui.shareMenu || ui.readMenu)){ ui.shareMenu = false; ui.readMenu = false; render(); }
+  if(e.key === 'Escape' && (ui.shareMenu || ui.readMenu || ui.shopMenu)){ ui.shareMenu = false; ui.readMenu = false; ui.shopMenu = false; render(); }
 });
 
 function exportSingleRecipe(r){
@@ -3820,6 +4118,52 @@ function recipeToPlainText(r){
   (r.steps||[]).forEach(function(s, idx){ lines.push((idx+1) + ". " + s); });
   if(r.originalUrl){ lines.push(""); lines.push("Source: " + r.originalUrl); }
   return lines.join("\n");
+}
+/* ---------- sharing plain text (shopping list, ingredients) ---------- */
+function copyPlainText(text, doneMsg){
+  function fallbackCopy(){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try{ document.execCommand('copy'); alert(doneMsg); }
+    catch(e){ alert("Couldn't copy automatically. Here's the text to copy manually:\n\n" + text); }
+    document.body.removeChild(ta);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ alert(doneMsg); }).catch(fallbackCopy);
+  } else fallbackCopy();
+}
+function sharePlainText(how, text, title, doneMsg){
+  if(how === 'whatsapp'){
+    var url = 'https://wa.me/?text=' + encodeURIComponent(text), w = null;
+    try{ w = window.open(url, '_blank'); }catch(e){}
+    if(!w) location.href = url;
+  } else if(how === 'native'){
+    if(navigator.share) navigator.share({ title: title, text: text }).catch(function(){});
+  } else {
+    copyPlainText(text, doneMsg);
+  }
+}
+function shoppingListText(){
+  var left = state.shopping.filter(function(i){ return !i.checked; });
+  if(!left.length) return '';
+  return 'Shopping list\n' + left.map(function(i){ return '\u2022 ' + i.name; }).join('\n');
+}
+function ingredientsShareText(r){
+  var rows = document.querySelectorAll('.ing-row'), lines = [];
+  Array.prototype.forEach.call(rows, function(row){
+    var sp = row.querySelectorAll('span');
+    var name = sp[0] ? sp[0].textContent.replace(/\s+/g, ' ').trim() : '';
+    var amt = sp[1] ? sp[1].textContent.replace(/\s+/g, ' ').trim() : '';
+    if(name || amt) lines.push('\u2022 ' + (amt ? amt + ' ' : '') + name);
+  });
+  if(!lines.length){
+    (r.ingredients || []).forEach(function(i){ lines.push('\u2022 ' + [i.amount, i.unit, i.name].filter(Boolean).join(' ')); });
+  }
+  var head = 'Ingredients for \u201c' + (r.title || 'this recipe') + '\u201d';
+  var sv = servingsLabel(r.servings);
+  if(sv) head += ' (' + sv + ')';
+  return head + '\n' + lines.join('\n');
 }
 function copyRecipeAsText(r){
   var text = recipeToPlainText(r);
